@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Commerce Service Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">CS</div>
+          <div>
+            <h1>Commerce Service Console</h1>
+            <p>订单、物流、投诉一体化客服工作台</p>
+          </div>
+        </div>
+
+        <div class="top-search" aria-label="工作台搜索框">
+          <span>Search</span>
+          <input type="text" value="订单 / 物流 / 投诉" readonly />
+        </div>
+
+        <div class="top-status">
+          <span class="status-dot"></span>
+          后端联调环境
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <section class="panel agent-card">
+            <div class="agent-avatar">客</div>
+            <div>
+              <h2>客服坐席</h2>
+              <p>练习多轮对话、查单、查物流和投诉处理</p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>会话信息</span>
+              <small>Session</small>
+            </div>
+            <label class="field">
+              <span>用户 ID</span>
+              <input id="userId" type="text" placeholder="例如：user1" value="user1" />
+            </label>
+            <label class="field">
+              <span>客服名</span>
+              <input id="agentName" type="text" placeholder="例如：Alice" value="Alice" />
+            </label>
+            <label class="field">
+              <span>角色</span>
+              <select id="role">
+                <option value="agent" selected>普通客服</option>
+                <option value="manager">主管</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>当前状态</span>
+              <input id="status" type="text" readonly value="在线" />
+            </label>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>业务查询</span>
+              <small>Operations</small>
+            </div>
+            <div class="action-grid">
+              <button id="ordersBtn" class="ghost">订单列表</button>
+              <button id="logisticsBtn" class="ghost">物流列表</button>
+              <button id="complaintsBtn" class="ghost">投诉记录</button>
+              <button id="toolLogsBtn" class="ghost">工具日志</button>
+              <button id="clearBtn" class="ghost muted">清空聊天</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <span>快捷话术</span>
+              <small>Quick Reply</small>
+            </div>
+            <div class="chips">
+              <div class="chip-group">
+                <div class="chip-group-title">查询</div>
+                <button class="chip" data-message="查订单 A101">查订单 A101</button>
+                <button class="chip" data-message="查物流 L101">查物流 L101</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">知识库 / RAG</div>
+                <button class="chip" data-message="退款多久到账">退款多久到账</button>
+                <button class="chip" data-message="质量问题退货运费谁承担">质量问题退货运费</button>
+                <button class="chip" data-message="会员积分退款后会扣回吗">会员积分退款</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">组合场景</div>
+                <button class="chip" data-message="我的订单 A101 48小时了，怎么还没发货">订单48小时未发货</button>
+                <button class="chip" data-message="我的物流 L101 48小时了，怎么还没发货">物流48小时未发货</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">订单操作</div>
+                <button class="chip" data-message="更新订单 A101 shipped">更新订单为已发货</button>
+                <button class="chip" data-message="确认更新订单 A101 shipped">确认更新订单</button>
+                <button class="chip" data-message="确认执行">确认执行 LLM 建议</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">物流操作</div>
+                <button class="chip" data-message="更新物流 L101 delivered">更新物流为已送达</button>
+                <button class="chip" data-message="确认更新物流 L101 delivered">确认更新物流</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">投诉</div>
+                <button class="chip" data-message="我要投诉">我要投诉</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">投诉工单操作</div>
+                <button class="chip" data-message="分配投诉 C-0021 Alice">分配投诉给 Alice</button>
+                <button class="chip" data-message="更新投诉 C-0021 processing">投诉改为处理中</button>
+                <button class="chip" data-message="解决投诉 C-0021">解决投诉</button>
+              </div>
+
+              <div class="chip-group">
+                <div class="chip-group-title">投诉筛选</div>
+                <button class="chip" data-message="查看高优先级投诉">高优先级投诉</button>
+                <button class="chip" data-message="查看处理中投诉">处理中投诉</button>
+                <button class="chip" data-message="查看待处理投诉">待处理投诉</button>
+                <button class="chip" data-message="查看已解决投诉">已解决投诉</button>
+              </div>
+            </div>
+          </section>
+        </aside>
+
+        <main class="main">
+          <section class="summary-grid">
+            <article class="summary-card">
+              <span>投诉总数</span>
+              <strong id="statsTotal">-</strong>
+              <p id="statsStatusText">pending / processing / resolved</p>
+            </article>
+            <article class="summary-card warning">
+              <span>待处理队列</span>
+              <strong id="statsPending">-</strong>
+              <p id="statsPendingText">需要客服优先跟进</p>
+            </article>
+            <article class="summary-card">
+              <span>高优先级</span>
+              <strong id="statsHighPriority">-</strong>
+              <p id="statsHighText">high priority complaints</p>
+            </article>
+          </section>
+
+          <section class="chat-card">
+            <header class="chat-header">
+              <div>
+                <span class="eyebrow">Live Support</span>
+                <h2>客服对话窗口</h2>
+                <p>像真实电商客服一样，从会话里查询订单、物流和投诉。</p>
+              </div>
+              <div class="header-badge">
+                <span class="status-dot"></span>
+                服务运行中
+              </div>
+            </header>
+
+            <section id="chatBody" class="chat-body">
+              <div class="bubble agent">
+                <div class="avatar">客</div>
+                <div class="content">
+                  你好，我是客服助手。你可以输入“查订单 A101”“查物流 L101”，也可以试试“更新订单 A101 shipped”体验二次确认。
+                </div>
+              </div>
+            </section>
+
+            <footer class="chat-footer">
+              <form id="chatForm" class="composer">
+                <textarea
+                  id="messageInput"
+                  placeholder="输入你的问题，例如：查订单 A101"
+                  rows="2"
+                ></textarea>
+                <button id="sendBtn" type="submit">发送请求</button>
+              </form>
+              <div class="footer-note">提示：Enter 发送，Shift + Enter 换行</div>
+            </footer>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="./app.js?v=20260512-complaint-stats"></script>
+  </body>
+</html>
