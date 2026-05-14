@@ -79,6 +79,7 @@ def init_db() -> None:
     init_tool_call_logs_table()
     init_orders_table()
     init_logistics_table()
+    init_knowledge_articles_table()
 
 
 
@@ -302,7 +303,156 @@ def init_complaint_notes_table() -> None:
         conn.commit()
 
 
-# 7. 投诉工单：创建、查询、筛选投诉记录。
+# 7. 知识库表：保存可以通过后台维护的客服政策和规则。
+def init_knowledge_articles_table() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT DEFAULT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def format_knowledge_article(row: sqlite3.Row) -> Dict[str, str]:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "content": row["content"],
+        "tags": row["tags"],
+        "enabled": bool(row["enabled"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def fetch_knowledge_articles(
+    include_disabled: bool = False,
+    query_text: Optional[str] = None,
+    tag: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    sql = "SELECT id, title, content, tags, enabled, created_at, updated_at FROM knowledge_articles"
+    conditions = []
+    params = []
+    if not include_disabled:
+        conditions.append("enabled = ?")
+        params.append(1)
+    if query_text:
+        keyword = f"%{query_text.strip()}%"
+        conditions.append("(title LIKE ? OR content LIKE ?)")
+        params.extend([keyword, keyword])
+    if tag:
+        conditions.append("tags LIKE ?")
+        params.append(f"%{tag.strip()}%")
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY id DESC"
+
+    with get_connection() as conn:
+        rows = conn.execute(sql, tuple(params)).fetchall()
+
+    return [format_knowledge_article(row) for row in rows]
+
+
+def get_knowledge_article(article_id: int) -> Optional[Dict[str, str]]:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, title, content, tags, enabled, created_at, updated_at
+            FROM knowledge_articles
+            WHERE id = ?
+            """,
+            (article_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return format_knowledge_article(row)
+
+
+def insert_knowledge_article(
+    title: str,
+    content: str,
+    tags: str = "",
+    enabled: bool = True,
+) -> Dict[str, str]:
+    cleaned_title = title.strip()
+    cleaned_content = content.strip()
+    cleaned_tags = tags.strip()
+
+    if not cleaned_title:
+        raise ValueError("knowledge title is required")
+    if not cleaned_content:
+        raise ValueError("knowledge content is required")
+
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO knowledge_articles (title, content, tags, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (cleaned_title, cleaned_content, cleaned_tags, 1 if enabled else 0, created_at, None),
+        )
+        conn.commit()
+        article_id = cursor.lastrowid
+
+    return get_knowledge_article(article_id)
+
+
+def update_knowledge_article(
+    article_id: int,
+    *,
+    title: Optional[str] = None,
+    content: Optional[str] = None,
+    tags: Optional[str] = None,
+    enabled: Optional[bool] = None,
+) -> Optional[Dict[str, str]]:
+    article = get_knowledge_article(article_id)
+    if article is None:
+        return None
+
+    next_title = article["title"] if title is None else title.strip()
+    next_content = article["content"] if content is None else content.strip()
+    next_tags = article["tags"] if tags is None else tags.strip()
+    next_enabled = article["enabled"] if enabled is None else enabled
+
+    if not next_title:
+        raise ValueError("knowledge title is required")
+    if not next_content:
+        raise ValueError("knowledge content is required")
+
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE knowledge_articles
+            SET title = ?, content = ?, tags = ?, enabled = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (next_title, next_content, next_tags, 1 if next_enabled else 0, updated_at, article_id),
+        )
+        conn.commit()
+
+    return get_knowledge_article(article_id)
+
+
+def delete_knowledge_article(article_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM knowledge_articles WHERE id = ?", (article_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+# 8. 投诉工单：创建、查询、筛选投诉记录。
 def insert_complaint(user_id: str, content: str, status: str = "pending", priority: str = "medium") -> str:
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_connection() as conn:
@@ -376,7 +526,7 @@ def fetch_complaint_stats() -> Dict[str, int]:
     }
 
 
-# 8. 单条投诉查询：根据 C-xxxx 找到对应投诉。
+# 9. 单条投诉查询：根据 C-xxxx 找到对应投诉。
 def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
     try:
         numeric_id = int(complaint_id[2:] if complaint_id.upper().startswith("C-") else complaint_id)
@@ -403,7 +553,7 @@ def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
     }
 
 
-# 9. 投诉更新：更新状态、优先级、处理人和时间字段。
+# 10. 投诉更新：更新状态、优先级、处理人和时间字段。
 def update_complaint(
     complaint_id: str,
     *,
@@ -453,7 +603,7 @@ def update_complaint(
     return get_complaint_by_id(complaint_id)
 
 
-# 10. 投诉备注：添加、查询、修改、删除 complaint_notes 子记录。
+# 11. 投诉备注：添加、查询、修改、删除 complaint_notes 子记录。
 def insert_complaint_note(complaint_id: str, content: str, author: str = "客服") -> Optional[Dict[str, str]]:
     complaint = get_complaint_by_id(complaint_id)
     if complaint is None:
@@ -565,7 +715,7 @@ def delete_complaint_note(note_id: str) -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
-# 11. 订单数据：创建、查询、列表、更新订单。
+# 12. 订单数据：创建、查询、列表、更新订单。
 def insert_order(order_no: str, user_id: str, status: str = "pending") -> Dict[str, str]:
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_connection() as conn:
@@ -642,7 +792,7 @@ def update_order_status(order_no: str, new_status: str) -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
-# 12. 物流数据：创建、查询、列表、更新物流。
+# 13. 物流数据：创建、查询、列表、更新物流。
 def init_logistics_table() -> None:
     with get_connection() as conn:
         conn.execute(

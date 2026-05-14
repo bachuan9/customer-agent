@@ -109,3 +109,65 @@ def test_tool_log_stats_endpoint_includes_sources():
     assert "failed" in data
     assert "sources" in data
     assert isinstance(data["sources"], list)
+
+
+def test_knowledge_article_crud_endpoints():
+    create_response = client.post(
+        "/knowledge",
+        json={
+            "title": "测试知识",
+            "content": "这是用于接口测试的知识库内容。",
+            "tags": "test",
+            "enabled": True,
+        },
+    )
+
+    assert create_response.status_code == 200
+    article = create_response.json()
+    assert article["title"] == "测试知识"
+    assert article["enabled"] is True
+
+    list_response = client.get("/knowledge")
+    assert list_response.status_code == 200
+    assert any(item["id"] == article["id"] for item in list_response.json())
+
+    update_response = client.patch(
+        f"/knowledge/{article['id']}",
+        json={"title": "测试知识已更新", "enabled": False},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["title"] == "测试知识已更新"
+    assert update_response.json()["enabled"] is False
+
+    delete_response = client.delete(f"/knowledge/{article['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": True, "id": article["id"]}
+
+
+def test_knowledge_article_list_supports_query_and_tag_filters():
+    client.post(
+        "/knowledge",
+        json={
+            "title": "生鲜破损赔付规则",
+            "content": "生鲜商品破损后可以申请赔付。",
+            "tags": "生鲜,赔付",
+            "enabled": True,
+        },
+    )
+    client.post(
+        "/knowledge",
+        json={
+            "title": "普通退款规则",
+            "content": "退款通常 1 到 3 个工作日到账。",
+            "tags": "退款,售后",
+            "enabled": True,
+        },
+    )
+
+    response = client.get("/knowledge?query=破损&tag=生鲜")
+
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    assert items[0]["title"] == "生鲜破损赔付规则"

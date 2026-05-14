@@ -79,6 +79,7 @@
               <button id="ordersBtn" class="ghost">订单列表</button>
               <button id="logisticsBtn" class="ghost">物流列表</button>
               <button id="complaintsBtn" class="ghost">投诉记录</button>
+              <button id="knowledgeBtn" class="ghost">知识库</button>
               <button id="toolLogsBtn" class="ghost">工具日志</button>
               <button id="clearBtn" class="ghost muted">清空聊天</button>
             </div>
@@ -198,10 +199,64 @@
               <div class="footer-note">提示：Enter 发送，Shift + Enter 换行</div>
             </footer>
           </section>
+
+          <section class="knowledge-card">
+            <header class="section-header">
+              <div>
+                <span class="eyebrow">Knowledge Base</span>
+                <h2>知识库管理</h2>
+                <p>维护客服政策和规则，Agent 的 RAG 检索会读取启用状态的知识。</p>
+              </div>
+              <button id="refreshKnowledgeBtn" class="ghost" type="button">刷新知识库</button>
+            </header>
+
+            <form id="knowledgeForm" class="knowledge-form">
+              <input id="knowledgeId" type="hidden" />
+              <label class="field">
+                <span>标题</span>
+                <input id="knowledgeTitle" type="text" placeholder="例如：生鲜破损赔付规则" />
+              </label>
+              <label class="field">
+                <span>标签</span>
+                <input id="knowledgeTags" type="text" placeholder="例如：生鲜,赔付" />
+              </label>
+              <label class="field knowledge-content-field">
+                <span>内容</span>
+                <textarea id="knowledgeContent" rows="4" placeholder="输入客服政策内容，Agent 会检索这里。"></textarea>
+              </label>
+              <label class="checkbox-field">
+                <input id="knowledgeEnabled" type="checkbox" checked />
+                <span>启用这条知识</span>
+              </label>
+              <div class="form-actions">
+                <button id="saveKnowledgeBtn" type="submit">新增知识</button>
+                <button id="cancelKnowledgeEditBtn" class="ghost muted" type="button">取消编辑</button>
+              </div>
+            </form>
+
+            <div class="knowledge-filters">
+              <label class="field">
+                <span>搜索标题/内容</span>
+                <input id="knowledgeSearch" type="text" placeholder="例如：退款、生鲜、破损" />
+              </label>
+              <label class="field">
+                <span>标签筛选</span>
+                <input id="knowledgeTagFilter" type="text" placeholder="例如：售后、物流" />
+              </label>
+              <div class="filter-actions">
+                <button id="searchKnowledgeBtn" class="ghost" type="button">搜索知识</button>
+                <button id="resetKnowledgeFilterBtn" class="ghost muted" type="button">重置筛选</button>
+              </div>
+            </div>
+
+            <div id="knowledgeList" class="knowledge-list">
+              <p class="empty-state">知识库加载中...</p>
+            </div>
+          </section>
         </main>
       </div>
     </div>
 
-    <script src="./app.js?v=20260512-complaint-stats"></script>
+    <script src="./app.js?v=20260514-knowledge-admin"></script>
   </body>
 </html>

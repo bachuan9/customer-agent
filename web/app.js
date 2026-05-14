@@ -10,6 +10,7 @@ const statusInput = document.getElementById("status");
 const complaintsBtn = document.getElementById("complaintsBtn");
 const ordersBtn = document.getElementById("ordersBtn");
 const logisticsBtn = document.getElementById("logisticsBtn");
+const knowledgeBtn = document.getElementById("knowledgeBtn");
 const toolLogsBtn = document.getElementById("toolLogsBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
@@ -18,6 +19,20 @@ const statsHighPriority = document.getElementById("statsHighPriority");
 const statsStatusText = document.getElementById("statsStatusText");
 const statsPendingText = document.getElementById("statsPendingText");
 const statsHighText = document.getElementById("statsHighText");
+const knowledgeForm = document.getElementById("knowledgeForm");
+const knowledgeIdInput = document.getElementById("knowledgeId");
+const knowledgeTitleInput = document.getElementById("knowledgeTitle");
+const knowledgeTagsInput = document.getElementById("knowledgeTags");
+const knowledgeContentInput = document.getElementById("knowledgeContent");
+const knowledgeEnabledInput = document.getElementById("knowledgeEnabled");
+const knowledgeList = document.getElementById("knowledgeList");
+const saveKnowledgeBtn = document.getElementById("saveKnowledgeBtn");
+const cancelKnowledgeEditBtn = document.getElementById("cancelKnowledgeEditBtn");
+const refreshKnowledgeBtn = document.getElementById("refreshKnowledgeBtn");
+const knowledgeSearchInput = document.getElementById("knowledgeSearch");
+const knowledgeTagFilterInput = document.getElementById("knowledgeTagFilter");
+const searchKnowledgeBtn = document.getElementById("searchKnowledgeBtn");
+const resetKnowledgeFilterBtn = document.getElementById("resetKnowledgeFilterBtn");
 const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
@@ -211,7 +226,155 @@ function bindComplaintActionButtons(container) {
   });
 }
 
-// 6. 发送聊天消息：把输入内容 POST 到 /chat。
+// 6. 知识库管理：把表单操作转换成 /knowledge 接口请求。
+function resetKnowledgeForm() {
+  knowledgeIdInput.value = "";
+  knowledgeTitleInput.value = "";
+  knowledgeTagsInput.value = "";
+  knowledgeContentInput.value = "";
+  knowledgeEnabledInput.checked = true;
+  saveKnowledgeBtn.textContent = "新增知识";
+}
+
+function renderKnowledgeList(items) {
+  if (!items.length) {
+    knowledgeList.innerHTML = '<p class="empty-state">暂无知识库内容，可以先新增一条。</p>';
+    return;
+  }
+
+  knowledgeList.innerHTML = items
+    .map(
+      (item) => `
+        <article class="knowledge-item">
+          <div class="knowledge-item-header">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${item.enabled ? "已启用" : "已停用"}</span>
+            </div>
+            <div class="table-actions">
+              <button class="link-button knowledge-edit-btn" data-id="${item.id}" type="button">编辑</button>
+              <button class="link-button danger knowledge-delete-btn" data-id="${item.id}" type="button">删除</button>
+            </div>
+          </div>
+          <p>${escapeHtml(item.content)}</p>
+          <small>标签：${escapeHtml(item.tags || "无")} / 来源：knowledge_articles:${item.id}</small>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function buildKnowledgeQueryString() {
+  const params = new URLSearchParams();
+  const query = knowledgeSearchInput.value.trim();
+  const tag = knowledgeTagFilterInput.value.trim();
+
+  if (query) params.set("query", query);
+  if (tag) params.set("tag", tag);
+
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+async function loadKnowledgeArticles(showBubble = false) {
+  if (showBubble) {
+    appendBubble("agent", "正在刷新知识库列表...");
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/knowledge${buildKnowledgeQueryString()}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const items = await res.json();
+    renderKnowledgeList(items);
+  } catch (err) {
+    knowledgeList.innerHTML = '<p class="empty-state">知识库加载失败，请确认后端正在运行。</p>';
+  }
+}
+
+async function saveKnowledgeArticle(event) {
+  event.preventDefault();
+
+  const articleId = knowledgeIdInput.value;
+  const payload = {
+    title: knowledgeTitleInput.value.trim(),
+    content: knowledgeContentInput.value.trim(),
+    tags: knowledgeTagsInput.value.trim(),
+    enabled: knowledgeEnabledInput.checked,
+  };
+
+  if (!payload.title || !payload.content) {
+    appendBubble("agent", "知识库标题和内容不能为空。");
+    return;
+  }
+
+  const path = articleId ? `/knowledge/${articleId}` : "/knowledge";
+  const method = articleId ? "PATCH" : "POST";
+
+  saveKnowledgeBtn.disabled = true;
+  saveKnowledgeBtn.textContent = articleId ? "保存中..." : "新增中...";
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    resetKnowledgeForm();
+    await loadKnowledgeArticles();
+    appendBubble("agent", articleId ? "知识库已更新，Agent 下次检索会使用最新内容。" : "知识库已新增，Agent 现在可以检索这条内容。");
+  } catch (err) {
+    appendBubble("agent", "知识库保存失败，请检查后端服务或输入内容。");
+  } finally {
+    saveKnowledgeBtn.disabled = false;
+    saveKnowledgeBtn.textContent = knowledgeIdInput.value ? "保存修改" : "新增知识";
+  }
+}
+
+async function editKnowledgeArticle(articleId) {
+  try {
+    const res = await fetch(`${API_BASE}/knowledge/${articleId}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const article = await res.json();
+    knowledgeIdInput.value = article.id;
+    knowledgeTitleInput.value = article.title;
+    knowledgeTagsInput.value = article.tags || "";
+    knowledgeContentInput.value = article.content;
+    knowledgeEnabledInput.checked = article.enabled;
+    saveKnowledgeBtn.textContent = "保存修改";
+    knowledgeTitleInput.focus();
+  } catch (err) {
+    appendBubble("agent", "读取知识库详情失败。");
+  }
+}
+
+async function deleteKnowledgeArticle(articleId) {
+  const confirmed = window.confirm("确定删除这条知识库内容吗？");
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/knowledge/${articleId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    await loadKnowledgeArticles();
+    appendBubble("agent", "知识库内容已删除。");
+  } catch (err) {
+    appendBubble("agent", "知识库删除失败，请确认这条内容是否还存在。");
+  }
+}
+
+// 7. 发送聊天消息：把输入内容 POST 到 /chat。
 async function sendMessage(message) {
   const userId = userIdInput.value.trim() || "user1";
   const role = roleInput?.value || "agent";
@@ -246,7 +409,7 @@ async function sendMessage(message) {
   }
 }
 
-// 7. 通用列表查询：查询订单列表和物流列表。
+// 8. 通用列表查询：查询订单列表和物流列表。
 async function fetchList(path, emptyText, columns) {
   const loadingBubble = appendBubble("agent", "正在加载列表...", { typing: true });
 
@@ -355,7 +518,7 @@ async function fetchToolLogs() {
   }
 }
 
-// 8. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
+// 9. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
@@ -495,4 +658,43 @@ toolLogsBtn.addEventListener("click", async () => {
   await fetchToolLogs();
 });
 
+knowledgeBtn.addEventListener("click", async () => {
+  await loadKnowledgeArticles(true);
+});
+
+refreshKnowledgeBtn.addEventListener("click", async () => {
+  await loadKnowledgeArticles(true);
+});
+
+searchKnowledgeBtn.addEventListener("click", async () => {
+  await loadKnowledgeArticles(true);
+});
+
+resetKnowledgeFilterBtn.addEventListener("click", async () => {
+  knowledgeSearchInput.value = "";
+  knowledgeTagFilterInput.value = "";
+  await loadKnowledgeArticles(true);
+});
+
+knowledgeForm.addEventListener("submit", saveKnowledgeArticle);
+
+cancelKnowledgeEditBtn.addEventListener("click", () => {
+  resetKnowledgeForm();
+});
+
+knowledgeList.addEventListener("click", (event) => {
+  const editButton = event.target.closest(".knowledge-edit-btn");
+  const deleteButton = event.target.closest(".knowledge-delete-btn");
+
+  if (editButton) {
+    editKnowledgeArticle(editButton.dataset.id);
+    return;
+  }
+
+  if (deleteButton) {
+    deleteKnowledgeArticle(deleteButton.dataset.id);
+  }
+});
+
 loadComplaintStats();
+loadKnowledgeArticles();

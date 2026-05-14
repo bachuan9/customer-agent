@@ -44,3 +44,17 @@ class LogisticsCreateRequest(BaseModel):
     tracking_no: str
     order_no: str
     status: str = "pending"
+
+
+class KnowledgeArticleCreateRequest(BaseModel):
+    title: str
+    content: str
+    tags: str = ""
+    enabled: bool = True
+
+
+class KnowledgeArticleUpdateRequest(BaseModel):
+    title: str = None
+    content: str = None
+    tags: str = None
+    enabled: bool = None

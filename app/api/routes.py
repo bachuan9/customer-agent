@@ -7,6 +7,8 @@ from app.models.schemas import (
     ComplaintNoteCreateRequest,
     ComplaintNoteUpdateRequest,
     ComplaintUpdateRequest,
+    KnowledgeArticleCreateRequest,
+    KnowledgeArticleUpdateRequest,
     LogisticsCreateRequest,
     LogisticsUpdateRequest,
     OrderCreateRequest,
@@ -22,16 +24,21 @@ from app.storage.db import (
     fetch_orders,
     fetch_complaint_notes,
     fetch_complaint_stats,
+    fetch_knowledge_articles,
     fetch_tool_call_stats,
     fetch_tool_call_logs,
     get_complaint_by_id,
+    get_knowledge_article,
     get_logistics_status,
     get_order_status,
+    insert_knowledge_article,
     insert_order,
     insert_logistics,
     insert_complaint_note,
+    delete_knowledge_article,
     update_complaint,
     update_complaint_note,
+    update_knowledge_article,
     update_logistics_status,
     update_order_status,
 )
@@ -232,3 +239,54 @@ def delete_note(note_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="complaint note not found")
     return {"deleted": True, "note_id": note_id}
+
+
+# 9. 知识库管理接口：让前端可以维护 Agent 会检索的客服政策。
+@router.get("/knowledge")
+def knowledge_articles(include_disabled: bool = True, query: str = None, tag: str = None) -> list:
+    return fetch_knowledge_articles(include_disabled=include_disabled, query_text=query, tag=tag)
+
+
+@router.get("/knowledge/{article_id}")
+def knowledge_article_detail(article_id: int) -> dict:
+    article = get_knowledge_article(article_id)
+    if article is None:
+        raise HTTPException(status_code=404, detail="knowledge article not found")
+    return article
+
+
+@router.post("/knowledge")
+def create_knowledge_article(req: KnowledgeArticleCreateRequest) -> dict:
+    try:
+        return insert_knowledge_article(req.title, req.content, req.tags, req.enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/knowledge/{article_id}")
+def update_knowledge_article_endpoint(article_id: int, req: KnowledgeArticleUpdateRequest) -> dict:
+    if req.title is None and req.content is None and req.tags is None and req.enabled is None:
+        raise HTTPException(status_code=400, detail="title, content, tags or enabled is required")
+
+    try:
+        article = update_knowledge_article(
+            article_id,
+            title=req.title,
+            content=req.content,
+            tags=req.tags,
+            enabled=req.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if article is None:
+        raise HTTPException(status_code=404, detail="knowledge article not found")
+    return article
+
+
+@router.delete("/knowledge/{article_id}")
+def delete_knowledge_article_endpoint(article_id: int) -> dict:
+    deleted = delete_knowledge_article(article_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="knowledge article not found")
+    return {"deleted": True, "id": article_id}

@@ -386,7 +386,8 @@ button:disabled {
   overflow: hidden;
 }
 
-.chat-header {
+.chat-header,
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -406,12 +407,15 @@ button:disabled {
   font-weight: 700;
 }
 
-.chat-header h2 {
+.chat-header h2,
+.section-header h2 {
+  margin: 0;
   font-size: 22px;
   line-height: 1.2;
 }
 
-.chat-header p {
+.chat-header p,
+.section-header p {
   margin: 8px 0 0;
   color: var(--muted);
   font-size: 13px;
@@ -538,6 +542,138 @@ button:disabled {
   color: var(--muted);
 }
 
+.knowledge-card {
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.knowledge-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 14px;
+  padding: 18px 20px;
+  background: linear-gradient(180deg, #fffdf8, #f8fafc);
+}
+
+.knowledge-content-field {
+  grid-column: 1 / -1;
+}
+
+.knowledge-form textarea {
+  width: 100%;
+  border: 1px solid rgba(19, 32, 51, 0.14);
+  border-radius: 12px;
+  padding: 11px 12px;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+}
+
+.knowledge-form textarea:focus {
+  outline: none;
+  border-color: rgba(240, 180, 41, 0.65);
+  box-shadow: 0 0 0 4px rgba(240, 180, 41, 0.12);
+}
+
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.form-actions button:first-child {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), #ffd45d);
+  color: #271a00;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.knowledge-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 0 20px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 14px;
+}
+
+.knowledge-list {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 20px;
+}
+
+.knowledge-item {
+  padding: 14px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  border-radius: 15px;
+  background: linear-gradient(180deg, #ffffff, #f9fbfe);
+}
+
+.knowledge-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.knowledge-item strong {
+  display: block;
+  color: var(--navy);
+}
+
+.knowledge-item span {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(25, 164, 106, 0.1);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.knowledge-item p {
+  margin: 10px 0;
+  color: var(--text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.knowledge-item small,
+.empty-state {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -641,6 +777,28 @@ tbody tr:nth-child(even) td {
 
   .action-grid {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-form {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    padding-bottom: 0;
+    flex-direction: column;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .form-actions button {
+    width: 100%;
   }
 
   .content {

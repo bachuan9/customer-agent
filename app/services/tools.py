@@ -9,6 +9,7 @@ from app.storage.db import (
     delete_complaint_note as db_delete_complaint_note,
     fetch_complaint_notes,
     fetch_complaints,
+    fetch_knowledge_articles,
     get_complaint_by_id,
     get_logistics_by_tracking_no,
     get_logistics_status,
@@ -127,8 +128,9 @@ def score_knowledge_section(query: str, section: str) -> int:
 
 def search_knowledge(query: str) -> Dict[str, Any]:
     knowledge_files = list_knowledge_files()
-    if not knowledge_files:
-        return {"found": False, "query": query, "matches": [], "sources": [], "error": "knowledge_file_not_found"}
+    db_articles = fetch_knowledge_articles(include_disabled=False)
+    if not knowledge_files and not db_articles:
+        return {"found": False, "query": query, "matches": [], "sources": [], "error": "knowledge_not_found"}
 
     scored_sections = []
     for knowledge_path in knowledge_files:
@@ -140,6 +142,13 @@ def search_knowledge(query: str) -> Dict[str, Any]:
             score = score_knowledge_section(query, section)
             if score > 0:
                 scored_sections.append({"score": score, "content": section, "source": source})
+
+    for article in db_articles:
+        article_text = f"{article['title']}\n{article['content']}"
+        score = score_knowledge_section(query, article_text)
+        if score > 0:
+            source = f"knowledge_articles:{article['id']}"
+            scored_sections.append({"score": score, "content": article_text, "source": source})
 
     scored_sections.sort(key=lambda item: item["score"], reverse=True)
     top_sections = scored_sections[:3]
