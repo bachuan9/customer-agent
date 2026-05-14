@@ -21,6 +21,25 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UserCreateRequest(BaseModel):
+    username: str
+    password: str
+    display_name: str
+    role: str = "agent"
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role: str
+
+
+class UserActiveUpdateRequest(BaseModel):
+    is_active: bool
+
+
+class UserPasswordResetRequest(BaseModel):
+    password: str
+
+
 class ComplaintUpdateRequest(BaseModel):
     status: str = None
     priority: str = None

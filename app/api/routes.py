@@ -1,3 +1,5 @@
+from typing import Set
+
 from fastapi import APIRouter, Header, HTTPException
 import sqlite3
 
@@ -15,12 +17,17 @@ from app.models.schemas import (
     LogisticsUpdateRequest,
     OrderCreateRequest,
     OrderUpdateRequest,
+    UserActiveUpdateRequest,
+    UserCreateRequest,
+    UserPasswordResetRequest,
+    UserRoleUpdateRequest,
 )
 from app.services.agent import list_complaints, run_agent
 from app.services.tool_registry import list_function_calling_tools
 from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
     ALLOWED_ORDER_STATUSES,
+    ALLOWED_USER_ROLES,
     delete_complaint_note,
     fetch_logistics,
     fetch_orders,
@@ -29,23 +36,28 @@ from app.storage.db import (
     fetch_knowledge_articles,
     fetch_tool_call_stats,
     fetch_tool_call_logs,
+    fetch_users,
     get_complaint_by_id,
     get_knowledge_article,
     get_logistics_status,
     get_order_status,
     get_user_by_token,
     insert_knowledge_article,
+    insert_user,
     insert_order,
     insert_logistics,
     insert_complaint_note,
     login_user,
     logout_user_by_token,
+    reset_user_password,
     delete_knowledge_article,
     update_complaint,
     update_complaint_note,
     update_knowledge_article,
     update_logistics_status,
     update_order_status,
+    update_user_active,
+    update_user_role,
 )
 from app.services.tools import get_complaint_detail
 
@@ -69,11 +81,17 @@ def get_current_user_from_header(authorization: str = None) -> dict:
     return user
 
 
-def require_manager(authorization: str = None) -> dict:
+def require_role(authorization: str = None, allowed_roles: Set[str] = None) -> dict:
     user = get_current_user_from_header(authorization)
-    if user["role"] != "manager":
-        raise HTTPException(status_code=403, detail="manager role required")
+    roles = allowed_roles or set()
+    if user["role"] not in roles:
+        required = ", ".join(sorted(roles)) or "none"
+        raise HTTPException(status_code=403, detail=f"required role: {required}")
     return user
+
+
+def require_manager(authorization: str = None) -> dict:
+    return require_role(authorization, {"manager"})
 
 
 # 1. 基础检查接口：用来确认后端服务是否正常运行。
@@ -126,7 +144,69 @@ def logout(authorization: str = Header(default=None)) -> dict:
     return {"logged_out": True}
 
 
-# 3. Agent 聊天接口：前端聊天框发来的消息会进入这里。
+@router.get("/users")
+def users(authorization: str = Header(default=None)) -> list:
+    require_manager(authorization)
+    return fetch_users()
+
+
+@router.post("/users")
+def create_user(req: UserCreateRequest, authorization: str = Header(default=None)) -> dict:
+    require_manager(authorization)
+    if req.role not in ALLOWED_USER_ROLES:
+        raise HTTPException(status_code=400, detail="invalid user role")
+
+    try:
+        return insert_user(req.username, req.password, req.display_name, req.role)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="user already exists")
+
+
+@router.patch("/users/{username}/role")
+def update_user_role_endpoint(
+    username: str,
+    req: UserRoleUpdateRequest,
+    authorization: str = Header(default=None),
+) -> dict:
+    require_manager(authorization)
+    if req.role not in ALLOWED_USER_ROLES:
+        raise HTTPException(status_code=400, detail="invalid user role")
+
+    user = update_user_role(username, req.role)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user
+
+
+@router.patch("/users/{username}/active")
+def update_user_active_endpoint(
+    username: str,
+    req: UserActiveUpdateRequest,
+    authorization: str = Header(default=None),
+) -> dict:
+    require_manager(authorization)
+    user = update_user_active(username, req.is_active)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user
+
+
+@router.patch("/users/{username}/password")
+def reset_user_password_endpoint(
+    username: str,
+    req: UserPasswordResetRequest,
+    authorization: str = Header(default=None),
+) -> dict:
+    require_manager(authorization)
+    if not req.password:
+        raise HTTPException(status_code=400, detail="password is required")
+
+    user = reset_user_password(username, req.password)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatResponse:
     token = extract_bearer_token(authorization)

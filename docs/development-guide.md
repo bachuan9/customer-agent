@@ -1,6 +1,6 @@
 # 开发手册
 
-这份文档记录本项目的常用开发命令、配置方式、测试方式和排错步骤。
+这份文档记录本项目的本地启动、功能测试、自动测试、排错和提交前检查流程。它的目标是让你每次重新打开项目时，都能照着步骤把系统跑起来。
 
 ## 1. 环境准备
 
@@ -38,21 +38,15 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-默认配置：
+开发环境推荐配置：
 
 ```env
+APP_ENV=dev
 APP_DB_PATH=data/complaints.db
 LLM_ENABLED=false
-DEEPSEEK_API_KEY=
 ```
 
-默认关闭 LLM 的原因：
-
-```text
-没有 API Key 或网络失败时，不影响规则 Agent 和本地功能。
-```
-
-启用 DeepSeek：
+启用 DeepSeek 时：
 
 ```env
 LLM_ENABLED=true
@@ -68,17 +62,8 @@ DEEPSEEK_API_KEY=你的真实key
 ```text
 .env 里有真实 API Key，不要提交。
 .env.example 只放模板，可以提交。
+APP_DB_PATH 用来指定 SQLite 数据库文件位置。
 ```
-
-`APP_DB_PATH` 用来指定 SQLite 数据库文件位置。
-
-开发环境可以使用：
-
-```env
-APP_DB_PATH=data/complaints.db
-```
-
-测试环境会通过 pytest 临时设置自己的数据库路径，避免污染真实数据。
 
 ## 3. 启动后端
 
@@ -88,26 +73,24 @@ APP_DB_PATH=data/complaints.db
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
-`--reload` 的作用是：
+`--reload` 的作用：
 
 ```text
-开发时改代码，服务自动重启。
+开发时修改代码，服务会自动重启。
 ```
 
-演示/生产启动命令：
+演示或稳定运行时，可以不加 `--reload`：
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir .
 ```
 
-演示/生产时不建议加 `--reload`，因为它更适合开发调试，不适合稳定运行。
-
 访问地址：
 
 ```text
-http://127.0.0.1:8001/web
-http://127.0.0.1:8001/docs
-http://127.0.0.1:8001/health
+网页工作台：http://127.0.0.1:8001/web
+接口文档：http://127.0.0.1:8001/docs
+健康检查：http://127.0.0.1:8001/health
 ```
 
 健康检查正常返回：
@@ -116,99 +99,223 @@ http://127.0.0.1:8001/health
 {"status":"ok"}
 ```
 
-## 4. 环境变量清单
+## 4. 默认账号
 
-当前 `.env` 支持：
-
-```text
-APP_NAME：应用名称
-APP_ENV：运行环境，例如 dev / prod
-APP_DB_PATH：SQLite 数据库文件路径
-LLM_ENABLED：是否启用 LLM
-LLM_PROVIDER：LLM 服务商，目前是 deepseek
-LLM_MODEL：模型名称
-LLM_TIMEOUT_SECONDS：LLM 请求超时时间
-DEEPSEEK_BASE_URL：DeepSeek API 地址
-DEEPSEEK_API_KEY：DeepSeek API Key
-```
-
-开发环境建议：
-
-```env
-APP_ENV=dev
-APP_DB_PATH=data/complaints.db
-LLM_ENABLED=false
-```
-
-演示环境如果要展示真实 LLM：
-
-```env
-APP_ENV=demo
-APP_DB_PATH=data/complaints.db
-LLM_ENABLED=true
-LLM_TIMEOUT_SECONDS=60
-DEEPSEEK_API_KEY=你的真实key
-```
-
-生产或正式演示前，至少检查：
+系统启动时会自动创建两个教学账号：
 
 ```text
-.env 是否存在
-DEEPSEEK_API_KEY 是否没有写进代码或 README
-APP_DB_PATH 是否指向你想使用的数据库
-LLM_ENABLED 是否符合本次演示目标
+普通客服：agent1 / agent123
+主管：manager1 / manager123
+```
+
+权限差异：
+
+```text
+普通客服：适合测试日常查询、普通客服对话。
+主管：可以维护知识库、管理用户、执行需要更高权限的确认操作。
 ```
 
 ## 5. 常用手动测试
 
-网页打开：
+打开：
 
 ```text
 http://127.0.0.1:8001/web
 ```
 
-查询类：
+建议按这个顺序测试。
+
+### 5.1 基础服务
+
+```text
+打开 /health，确认返回 {"status":"ok"}。
+打开 /docs，确认能看到接口文档。
+打开 /web，确认客服工作台能加载。
+```
+
+### 5.2 订单和物流
+
+在聊天框输入：
 
 ```text
 查订单 A101
 查物流 L101
+```
+
+或者点击左侧：
+
+```text
+订单列表
+物流列表
+```
+
+期望结果：
+
+```text
+能看到订单或物流状态。
+如果编号不存在，应看到未找到提示。
+```
+
+### 5.3 投诉工单
+
+可以测试：
+
+```text
+我要投诉
 查看投诉
 查看投诉 C-0001
-7 天后还能退货吗
+```
+
+在投诉列表里可以测试：
+
+```text
+查看详情
+分配处理人
+改为处理中
+解决投诉
+修改优先级
+添加备注
+查看备注
+修改备注
+删除备注
+```
+
+### 5.4 知识库和 RAG
+
+使用主管账号登录：
+
+```text
+manager1 / manager123
+```
+
+点击：
+
+```text
+知识库
+```
+
+测试：
+
+```text
+新增一条知识
+搜索知识
+按标签筛选
+编辑知识
+删除知识
+```
+
+聊天框可测试：
+
+```text
+退款多久到账
 质量问题退货运费谁承担
-物流超过48小时没有更新怎么办
 会员积分退款后会扣回吗
 ```
 
-LLM 写操作安全确认：
+期望结果：
 
 ```text
-把订单 A101 改成 delivered
+Agent 回复里能参考知识库内容。
+```
+
+### 5.5 用户管理
+
+使用主管账号登录：
+
+```text
+manager1 / manager123
+```
+
+点击：
+
+```text
+用户管理
+```
+
+测试：
+
+```text
+查看用户列表
+新增普通客服
+新增主管
+修改某个用户的角色
+禁用用户，并确认该用户不能登录
+重新启用用户，并确认该用户可以登录
+重置用户密码，并确认旧密码失败、新密码成功
+```
+
+再切换普通客服登录：
+
+```text
+agent1 / agent123
+```
+
+期望结果：
+
+```text
+普通客服不能管理用户。
+后端会返回 403，前端会显示没有权限。
+主管可以完成用户管理三类动作：角色调整、启用禁用、重置密码。
+```
+
+### 5.6 LLM 写操作确认
+
+如果 `.env` 中 `LLM_ENABLED=true`，可以测试：
+
+```text
+把订单 A101 改成 shipped
 确认执行
 ```
 
-RBAC 权限测试：
+权限测试：
 
 ```text
-普通客服确认 update_order：应该被拒绝
-主管确认 update_order：应该成功
+普通客服确认写操作：应该被 RBAC 拒绝。
+主管确认写操作：应该执行成功。
 ```
 
-工具日志检查：
+这条链路是：
 
 ```text
-点击“工具日志”
-查看来源统计和最新日志
+用户提出修改
+-> LLM 选择工具
+-> 后端保存 pending_llm_action
+-> 用户确认执行
+-> RBAC 检查角色
+-> 执行工具
+-> 写入数据库
+-> 记录工具日志
 ```
 
-常见来源：
+### 5.7 工具日志
+
+点击：
 
 ```text
-LLM Agent：LLM 选工具
-LLM 确认执行：人工确认后执行
-权限拒绝：RBAC 拒绝
-规则 Agent：旧规则逻辑
-历史未知：老日志
+工具日志
+```
+
+重点看：
+
+```text
+来源统计
+成功/失败
+工具名
+参数
+错误原因
+查看详情
+复制参数 JSON
+复制结果 JSON
+```
+
+常见来源含义：
+
+```text
+rule_agent：规则 Agent 调用
+llm_agent：LLM 选择工具
+llm_confirmed_action：人工确认后执行
+rbac_denied：权限拒绝
+unknown：旧日志或未知来源
 ```
 
 ## 6. 自动化测试
@@ -219,178 +326,135 @@ LLM 确认执行：人工确认后执行
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-当前测试分三类：
+当前完整测试应看到：
 
 ```text
-tests/test_agent_core.py：核心函数和权限确认
-tests/test_api_routes.py：FastAPI 接口
-tests/test_db_layer.py：数据库层
-tests/test_knowledge_rag.py：最小 RAG 知识库检索
+44 passed
 ```
 
-RAG 知识库目录：
+检查前端 JavaScript：
 
-```text
-docs/knowledge/return-policy.md
-docs/knowledge/shipping-policy.md
-docs/knowledge/membership-policy.md
+```powershell
+node --check web\app.js
 ```
 
-新增知识库时，把 Markdown 文件放进 `docs/knowledge/`，`search_knowledge` 会自动遍历 `.md` 文件。
+检查 Python 编译：
 
-测试数据库隔离：
-
-```text
-测试使用临时 SQLite，不会污染 data/complaints.db。
+```powershell
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
-相关文件：
+推荐提交前完整检查：
 
-```text
-pytest.ini
-tests/conftest.py
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+node --check web\app.js
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
 ## 7. 常用接口
 
 ```text
-GET  /health
-POST /chat
-GET  /orders
-GET  /orders/{order_no}
-PATCH /orders/{order_no}
-GET  /logistics
-GET  /logistics/{tracking_no}
-PATCH /logistics/{tracking_no}
-GET  /complaints
-GET  /complaints/{complaint_id}
-PATCH /complaints/{complaint_id}
-GET  /tool-logs
-GET  /tool-logs/stats
-GET  /tools/function-calling
+GET    /health
+POST   /chat
+
+POST   /auth/login
+GET    /auth/me
+POST   /auth/logout
+
+GET    /orders
+POST   /orders
+GET    /orders/{order_no}
+PATCH  /orders/{order_no}
+
+GET    /logistics
+POST   /logistics
+GET    /logistics/{tracking_no}
+PATCH  /logistics/{tracking_no}
+
+GET    /complaints
+GET    /complaints/stats
+GET    /complaints/{complaint_id}
+PATCH  /complaints/{complaint_id}
+
+POST   /complaints/{complaint_id}/notes
+GET    /complaints/{complaint_id}/notes
+PATCH  /complaint-notes/{note_id}
+DELETE /complaint-notes/{note_id}
+
+GET    /knowledge
+GET    /knowledge/{article_id}
+POST   /knowledge
+PATCH  /knowledge/{article_id}
+DELETE /knowledge/{article_id}
+
+GET    /users
+POST   /users
+PATCH  /users/{username}/role
+
+GET    /tool-logs
+GET    /tool-logs/stats
+GET    /tools/function-calling
 ```
 
 ## 8. 关键文件职责
 
 ```text
-routes.py：HTTP 接口入口
-schemas.py：请求和响应格式
-agent.py：聊天业务总调度
-llm_agent.py：LLM 选工具
-llm_client.py：调用 DeepSeek
-llm_reply.py：生成自然回复
-tool_registry.py：工具总台和日志入口
-tools.py：业务工具函数
-db.py：SQLite 数据库操作
-web/app.js：前端交互和 fetch 请求
+app/main.py：FastAPI 应用入口，挂载路由和 web 静态文件。
+app/api/routes.py：HTTP 接口入口，接收前端请求。
+app/models/schemas.py：请求体和响应体的数据格式。
+app/services/agent.py：聊天业务总调度。
+app/services/llm_agent.py：LLM Function Calling 工具选择。
+app/services/llm_client.py：调用 DeepSeek API。
+app/services/llm_reply.py：生成更自然的最终回复。
+app/services/tool_registry.py：工具注册、工具调用、工具日志入口。
+app/services/tools.py：订单、物流、投诉、知识库等业务工具函数。
+app/storage/db.py：SQLite 数据库操作层。
+web/index.html：页面结构。
+web/app.js：前端交互和 fetch 请求。
+web/styles.css：页面样式。
+tests/：自动化测试。
+docs/knowledge/：Markdown RAG 知识库。
+practice/：个人学习笔记，不提交公开仓库。
 ```
 
-## 9. 部署/演示前检查清单
+## 9. SQLite 数据库备份
 
-演示前建议按顺序做：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-确认看到：
-
-```text
-14 passed
-```
-
-启动服务：
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir .
-```
-
-检查：
-
-```text
-http://127.0.0.1:8001/health
-http://127.0.0.1:8001/web
-http://127.0.0.1:8001/docs
-```
-
-网页手动测试：
-
-```text
-查订单 A101
-查物流 L101
-把订单 A101 改成 delivered
-普通客服确认执行：应被拒绝
-主管确认执行：应成功
-点击工具日志：应看到来源统计
-```
-
-## 10. SQLite 数据库备份
-
-当前项目使用 SQLite，默认数据库路径：
+默认数据库：
 
 ```text
 data/complaints.db
 ```
 
-演示前可以复制一份备份：
+演示前可以备份：
 
 ```powershell
 Copy-Item data\complaints.db data\complaints.backup.db
 ```
 
-如果演示过程中数据被改乱，可以停止后端后恢复：
+恢复前先停止后端，然后执行：
 
 ```powershell
 Copy-Item data\complaints.backup.db data\complaints.db -Force
 ```
 
-注意：
+为什么要先停止后端：
 
 ```text
-恢复数据库前先停止后端，避免服务正在写数据库。
+避免服务正在写数据库时覆盖文件，导致数据异常。
 ```
 
-## 11. 日志和可观测性检查
+## 10. 常见问题排查
 
-前端点击：
+### 10.1 /health 正常，但 /web 打不开
 
-```text
-工具日志
+确认启动命令包含：
+
+```powershell
+--app-dir .
 ```
 
-重点看：
-
-```text
-来源统计
-失败类型
-最新调用工具
-参数
-错误原因
-```
-
-常见来源含义：
-
-```text
-LLM Agent：LLM 选工具
-LLM 确认执行：人工确认后执行
-权限拒绝：RBAC 拒绝
-规则 Agent：旧规则逻辑
-历史未知：旧日志
-```
-
-如果 LLM 没反应，先看：
-
-```text
-后端终端 debug 日志
-工具日志最新来源
-.env 里的 LLM_ENABLED 和 DEEPSEEK_API_KEY
-```
-
-## 12. 常见问题
-
-### /health 正常，但 /web 打不开
-
-确认启动命令使用了项目根目录：
+推荐命令：
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
@@ -402,7 +466,51 @@ LLM 确认执行：人工确认后执行
 http://127.0.0.1:8001/web
 ```
 
-### LLM 没有调用
+### 10.2 /docs 没有新接口
+
+常见原因：
+
+```text
+后端没重启。
+启动的不是当前项目目录。
+浏览器页面缓存。
+代码保存失败。
+```
+
+处理方式：
+
+```text
+保存代码
+重启后端
+刷新 /docs
+确认终端当前路径是项目根目录
+```
+
+### 10.3 登录后仍然没有权限
+
+先确认登录账号：
+
+```text
+agent1 是普通客服
+manager1 是主管
+```
+
+知识库写操作、用户管理等功能需要：
+
+```text
+manager
+```
+
+如果仍然异常：
+
+```text
+退出登录
+重新登录 manager1
+刷新页面
+重新点击功能按钮
+```
+
+### 10.4 LLM 没有调用
 
 检查 `.env`：
 
@@ -411,77 +519,116 @@ LLM_ENABLED=true
 DEEPSEEK_API_KEY=你的真实key
 ```
 
-重启后端。
+然后重启后端。
 
-然后看后端终端是否出现：
-
-```text
-[DEBUG] LLM selected tool: ...
-```
-
-也可以点前端“工具日志”，看最新来源是否是：
+也可以查看：
 
 ```text
-LLM Agent
+后端终端 debug 日志
+前端“工具日志”的最新来源
 ```
 
-### LLM 超时
+如果来源是 `rule_agent`，说明当前走的是规则 Agent。
 
-可以把 `.env` 里超时时间调大：
+如果来源是 `llm_agent`，说明 LLM 已经参与工具选择。
+
+### 10.5 LLM 超时
+
+可以把 `.env` 里的超时时间调大：
 
 ```env
 LLM_TIMEOUT_SECONDS=60
 ```
 
-如果仍然超时，系统会 fallback 到规则 Agent。
+如果仍然超时，系统会回退到规则 Agent，先保证基础功能可用。
 
-### 普通客服确认执行被拒绝
+### 10.6 普通客服确认执行被拒绝
 
 这是正常的 RBAC 行为。
 
-切换角色为：
+含义：
 
 ```text
-主管
+普通客服没有权限执行某些写操作。
 ```
 
-再输入：
+切换到主管后再测试：
 
 ```text
-确认执行
+manager1 / manager123
 ```
 
-### pytest 收集到 scripts 里的文件
+### 10.7 pytest 收集到不该测试的文件
 
-项目已经有：
-
-```text
-pytest.ini
-```
-
-它限制 pytest 只收集：
+项目通过 `pytest.ini` 限制 pytest 只收集：
 
 ```text
 tests/
 ```
 
-如果还是异常，确认当前命令是在项目根目录运行。
+如果仍然异常，确认命令是在项目根目录运行。
 
-## 13. 推荐开发顺序
+## 11. Git 提交前检查
 
-每次改代码建议按这个顺序：
+先查看改动：
+
+```powershell
+git status --short
+```
+
+不要提交：
 
 ```text
-1. 明确要改哪一层
-2. 小步修改
-3. 运行 pytest
-4. 启动后端手动测试
-5. 看工具日志确认链路
-6. 更新学习文档或 README
+.env
+data/*.db
+logs/*.log
+practice/
+```
+
+提交前建议运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+node --check web\app.js
+.\.venv\Scripts\python.exe -m compileall app
+```
+
+如果要提交代码但不提交学习文档：
+
+```powershell
+git add README.md docs/development-guide.md app web tests
+```
+
+不要执行：
+
+```powershell
+git add .
+```
+
+原因：
+
+```text
+git add . 容易把个人学习文档、临时文件一起加进去。
+```
+
+## 12. 推荐开发顺序
+
+每次新增功能时，建议按这个顺序：
+
+```text
+1. 明确要改哪一层。
+2. 先改 db.py，让数据库有能力。
+3. 再改 schemas.py，定义请求格式。
+4. 再改 routes.py，提供 HTTP 接口。
+5. 再改 web/app.js，让前端能调用接口。
+6. 补测试。
+7. 跑 pytest 和语法检查。
+8. 手动测试网页。
+9. 更新 README 或开发手册。
 ```
 
 一句话总结：
 
 ```text
-先让功能可用，再让安全可控，最后让系统可测试、可观察、可维护。
+先让功能可用，再让权限可控，最后让系统可测试、可观察、可维护。
 ```

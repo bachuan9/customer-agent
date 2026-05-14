@@ -625,6 +625,45 @@ button:disabled {
   box-shadow: 0 0 0 4px rgba(240, 180, 41, 0.12);
 }
 
+.user-management-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.user-management-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.user-create-form,
+.user-password-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: center;
+}
+
+.user-create-form input,
+.user-create-form select,
+.user-password-form input {
+  width: 100%;
+  border: 1px solid rgba(19, 32, 51, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+}
+
+.user-password-form {
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
+}
+
+.user-create-form button,
+.user-password-form button {
+  min-height: 42px;
+}
+
 .checkbox-field {
   display: inline-flex;
   align-items: center;
@@ -810,6 +849,46 @@ table {
   color: var(--text);
 }
 
+.tool-log-detail {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-log-detail strong {
+  color: var(--navy);
+}
+
+.tool-log-detail p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.tool-log-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0;
+}
+
+.tool-log-detail label {
+  margin-top: 6px;
+  color: var(--navy);
+  font-weight: 800;
+}
+
+.tool-log-detail pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #101828;
+  color: #e6edf7;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 th,
 td {
   border: 1px solid rgba(19, 32, 51, 0.1);
@@ -876,6 +955,14 @@ tbody tr:nth-child(even) td {
   }
 
   .log-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .user-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .user-password-form {
     grid-template-columns: 1fr;
   }
 

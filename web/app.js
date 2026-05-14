@@ -18,6 +18,7 @@ const ordersBtn = document.getElementById("ordersBtn");
 const logisticsBtn = document.getElementById("logisticsBtn");
 const knowledgeBtn = document.getElementById("knowledgeBtn");
 const toolLogsBtn = document.getElementById("toolLogsBtn");
+const usersBtn = document.getElementById("usersBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
 const statsPending = document.getElementById("statsPending");
@@ -662,6 +663,113 @@ function buildToolLogQueryString(source = "", success = "") {
   return `?${params.toString()}`;
 }
 
+function renderToolLogTable(logs) {
+  return renderTable(
+    [
+      { key: "id", label: "ID" },
+      {
+        key: "source",
+        label: "来源",
+        render: (value) => {
+          if (value === "llm_agent") return "LLM Agent";
+          if (value === "llm_confirmed_action") return "LLM 确认执行";
+          if (value === "rbac_denied") return "权限拒绝";
+          return "规则 Agent";
+        },
+      },
+      { key: "tool_name", label: "工具" },
+      {
+        key: "success",
+        label: "结果",
+        render: (value) => (value ? "成功" : "失败"),
+      },
+      {
+        key: "arguments",
+        label: "参数",
+        render: (value) => escapeHtml(JSON.stringify(value)),
+      },
+      { key: "error", label: "错误" },
+      { key: "created_at", label: "时间" },
+      {
+        key: "id",
+        label: "操作",
+        render: (value) => `<button class="link-button tool-log-detail-btn" data-log-id="${escapeHtml(String(value))}" type="button">查看详情</button>`,
+      },
+    ],
+    logs
+  );
+}
+
+function renderToolLogDetail(log) {
+  return `
+    <div class="tool-log-detail">
+      <strong>工具日志详情 #${escapeHtml(String(log.id))}</strong>
+      <p>来源：${escapeHtml(log.source)}</p>
+      <p>工具：${escapeHtml(log.tool_name)}</p>
+      <p>结果：${log.success ? "成功" : "失败"}</p>
+      <p>错误：${escapeHtml(log.error || "无")}</p>
+      <p>时间：${escapeHtml(log.created_at)}</p>
+      <div class="tool-log-detail-actions">
+        <button class="ghost copy-tool-log-json-btn" data-log-id="${escapeHtml(String(log.id))}" data-copy-kind="arguments" type="button">复制参数 JSON</button>
+        <button class="ghost copy-tool-log-json-btn" data-log-id="${escapeHtml(String(log.id))}" data-copy-kind="result" type="button">复制结果 JSON</button>
+      </div>
+      <label>参数</label>
+      <pre>${escapeHtml(JSON.stringify(log.arguments, null, 2))}</pre>
+      <label>返回结果</label>
+      <pre>${escapeHtml(JSON.stringify(log.result, null, 2))}</pre>
+    </div>
+  `;
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+function bindToolLogCopyButtons(container, log) {
+  container.querySelectorAll(".copy-tool-log-json-btn").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const kind = button.dataset.copyKind;
+      const data = kind === "result" ? log.result : log.arguments;
+      const label = kind === "result" ? "结果" : "参数";
+
+      try {
+        await copyTextToClipboard(JSON.stringify(data, null, 2));
+        appendBubble("agent", `${label} JSON 已复制到剪贴板。`);
+      } catch (err) {
+        appendBubble("agent", `${label} JSON 复制失败，请手动选择文本复制。`);
+      }
+    });
+  });
+}
+
+function bindToolLogDetailButtons(container, logs) {
+  container.querySelectorAll(".tool-log-detail-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const logId = Number(button.dataset.logId);
+      const log = logs.find((item) => item.id === logId);
+      if (!log) {
+        appendBubble("agent", "没有找到这条工具日志详情。");
+        return;
+      }
+      const detailBubble = appendHtmlBubble(renderToolLogDetail(log));
+      bindToolLogCopyButtons(detailBubble, log);
+    });
+  });
+}
+
 async function fetchToolLogs() {
   const loadingBubble = appendBubble("agent", "正在加载工具调用日志...", { typing: true });
 
@@ -688,41 +796,14 @@ async function fetchToolLogs() {
       return;
     }
 
-    const tableHtml = renderTable(
-      [
-        { key: "id", label: "ID" },
-        {
-          key: "source",
-          label: "来源",
-          render: (value) => {
-            if (value === "llm_agent") return "LLM Agent";
-            if (value === "llm_confirmed_action") return "LLM 确认执行";
-            if (value === "rbac_denied") return "权限拒绝";
-            return "规则 Agent";
-          },
-        },
-        { key: "tool_name", label: "工具" },
-        {
-          key: "success",
-          label: "结果",
-          render: (value) => (value ? "成功" : "失败"),
-        },
-        {
-          key: "arguments",
-          label: "参数",
-          render: (value) => escapeHtml(JSON.stringify(value)),
-        },
-        { key: "error", label: "错误" },
-        { key: "created_at", label: "时间" },
-      ],
-      logs
-    );
+    const tableHtml = renderToolLogTable(logs);
 
     setBubbleHtml(
       loadingBubble,
       `${renderToolLogStats(stats)}${buildToolLogFilterHtml()}<div class="tool-log-table-wrap">${tableHtml}</div>`
     );
     bindToolLogFilter(loadingBubble);
+    bindToolLogDetailButtons(loadingBubble, logs);
     loadingBubble.classList.remove("typing");
   } catch (err) {
     setBubbleText(loadingBubble, "工具日志加载失败，请确认后端服务正在运行。");
@@ -739,39 +820,12 @@ async function fetchFilteredToolLogs(source, success, container) {
     const logs = await res.json();
     const oldTable = container.querySelector(".tool-log-table-wrap");
     const tableHtml = logs.length
-      ? renderTable(
-          [
-            { key: "id", label: "ID" },
-            {
-              key: "source",
-              label: "来源",
-              render: (value) => {
-                if (value === "llm_agent") return "LLM Agent";
-                if (value === "llm_confirmed_action") return "LLM 确认执行";
-                if (value === "rbac_denied") return "权限拒绝";
-                return "规则 Agent";
-              },
-            },
-            { key: "tool_name", label: "工具" },
-            {
-              key: "success",
-              label: "结果",
-              render: (value) => (value ? "成功" : "失败"),
-            },
-            {
-              key: "arguments",
-              label: "参数",
-              render: (value) => escapeHtml(JSON.stringify(value)),
-            },
-            { key: "error", label: "错误" },
-            { key: "created_at", label: "时间" },
-          ],
-          logs
-        )
+      ? renderToolLogTable(logs)
       : '<p class="empty-state">没有匹配当前筛选条件的工具日志。</p>';
 
     if (oldTable) {
       oldTable.innerHTML = tableHtml;
+      bindToolLogDetailButtons(container, logs);
     }
   } catch (err) {
     appendBubble("agent", "筛选工具日志失败，请确认后端服务正在运行。");
@@ -791,6 +845,285 @@ function bindToolLogFilter(container) {
 }
 
 // 9. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
+// 9. 用户管理：主管可以查看账号、新增账号、调整普通客服/主管角色。
+function canManageUsers() {
+  return currentUser?.role === "manager";
+}
+
+function getUserRoleLabel(role) {
+  return role === "manager" ? "主管" : "普通客服";
+}
+
+function getUserActiveLabel(isActive) {
+  return isActive ? "启用中" : "已禁用";
+}
+
+function renderUserManagementPanel(users) {
+  const permissionHint = canManageUsers()
+    ? "当前是主管账号，可以维护用户。"
+    : "只有主管账号可以维护用户，请先登录 manager1。";
+  const disabled = canManageUsers() ? "" : " disabled";
+  const rowsHtml = users.length
+    ? renderTable(
+        [
+          { key: "username", label: "账号" },
+          { key: "display_name", label: "显示名" },
+          {
+            key: "role",
+            label: "角色",
+            render: (value) => getUserRoleLabel(value),
+          },
+          {
+            key: "is_active",
+            label: "状态",
+            render: (value) => getUserActiveLabel(value),
+          },
+          { key: "created_at", label: "创建时间" },
+          { key: "updated_at", label: "更新时间" },
+          {
+            key: "username",
+            label: "操作",
+            render: (value, row) => {
+              const username = escapeHtml(String(value));
+              const nextRole = row.role === "manager" ? "agent" : "manager";
+              const nextActive = !row.is_active;
+              const activeClass = row.is_active ? " danger" : "";
+              return `
+                <div class="table-actions">
+                  <button class="link-button user-role-btn" data-username="${username}" data-role="${nextRole}" type="button"${disabled}>改为${getUserRoleLabel(nextRole)}</button>
+                  <button class="link-button user-active-btn${activeClass}" data-username="${username}" data-active="${String(nextActive)}" type="button"${disabled}>${nextActive ? "启用账号" : "禁用账号"}</button>
+                  <button class="link-button user-password-btn" data-username="${username}" type="button"${disabled}>重置密码</button>
+                </div>
+              `;
+            },
+          },
+        ],
+        users
+      )
+    : '<p class="empty-state">暂无用户。</p>';
+
+  return `
+    <div class="user-management-panel">
+      <strong>用户管理</strong>
+      <p>${permissionHint}</p>
+      <form class="user-create-form">
+        <input name="username" type="text" placeholder="账号，例如 agent2"${disabled} />
+        <input name="display_name" type="text" placeholder="显示名，例如 客服 Carol"${disabled} />
+        <input name="password" type="password" placeholder="初始密码"${disabled} />
+        <select name="role"${disabled}>
+          <option value="agent">普通客服</option>
+          <option value="manager">主管</option>
+        </select>
+        <button type="submit"${disabled}>新增用户</button>
+      </form>
+      <form class="user-password-form">
+        <input name="username" type="text" placeholder="先点击表格里的“重置密码”" readonly${disabled} />
+        <input name="password" type="password" placeholder="输入新密码"${disabled} />
+        <button type="submit"${disabled}>确认重置密码</button>
+      </form>
+      <div class="tool-log-table-wrap">${rowsHtml}</div>
+    </div>
+  `;
+}
+
+function getUserErrorMessage(status) {
+  if (status === 401) return "请先登录主管账号。";
+  if (status === 403) return "当前账号不是主管，不能管理用户。";
+  if (status === 409) return "这个用户名已经存在，请换一个账号名。";
+  if (status === 400) return "角色只能是普通客服或主管，请检查输入。";
+  if (status === 404) return "没有找到这个用户。";
+  return "用户管理操作失败，请检查后端服务或输入内容。";
+}
+
+async function loadUsers(showLoading = true) {
+  const loadingBubble = showLoading
+    ? appendBubble("agent", "正在加载用户列表...", { typing: true })
+    : null;
+
+  try {
+    const res = await fetch(`${API_BASE}/users`, {
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(String(res.status));
+    }
+
+    const users = await res.json();
+    const container = loadingBubble || appendHtmlBubble("");
+    setBubbleHtml(container, renderUserManagementPanel(users));
+    bindUserManagementPanel(container);
+    container.classList.remove("typing");
+  } catch (err) {
+    const status = Number(err.message);
+    const message = getUserErrorMessage(status);
+    if (loadingBubble) {
+      setBubbleText(loadingBubble, message);
+      loadingBubble.classList.remove("typing");
+    } else {
+      appendBubble("agent", message);
+    }
+  }
+}
+
+async function createUser(form, container) {
+  const formData = new FormData(form);
+  const payload = {
+    username: String(formData.get("username") || "").trim(),
+    password: String(formData.get("password") || ""),
+    display_name: String(formData.get("display_name") || "").trim(),
+    role: String(formData.get("role") || "agent"),
+  };
+
+  if (!payload.username || !payload.password || !payload.display_name) {
+    appendBubble("agent", "账号、显示名、初始密码都不能为空。");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/users`, {
+      method: "POST",
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(String(res.status));
+    }
+    appendBubble("agent", `用户 ${payload.username} 已新增。`);
+    await refreshUserPanel(container);
+  } catch (err) {
+    appendBubble("agent", getUserErrorMessage(Number(err.message)));
+  }
+}
+
+async function updateUserRoleFromPanel(button, container) {
+  const username = button.dataset.username;
+  const role = button.dataset.role;
+
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}/role`, {
+      method: "PATCH",
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ role }),
+    });
+    if (!res.ok) {
+      throw new Error(String(res.status));
+    }
+    appendBubble("agent", `用户 ${username} 已改为${getUserRoleLabel(role)}。`);
+    await refreshUserPanel(container);
+  } catch (err) {
+    appendBubble("agent", getUserErrorMessage(Number(err.message)));
+  }
+}
+
+async function updateUserActiveFromPanel(button, container) {
+  const username = button.dataset.username;
+  const isActive = button.dataset.active === "true";
+
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}/active`, {
+      method: "PATCH",
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ is_active: isActive }),
+    });
+    if (!res.ok) {
+      throw new Error(String(res.status));
+    }
+    appendBubble("agent", `用户 ${username} 已${isActive ? "启用" : "禁用"}。`);
+    await refreshUserPanel(container);
+  } catch (err) {
+    appendBubble("agent", getUserErrorMessage(Number(err.message)));
+  }
+}
+
+async function resetUserPasswordFromPanel(form, container) {
+  const formData = new FormData(form);
+  const username = String(formData.get("username") || "").trim();
+  const trimmedPassword = String(formData.get("password") || "").trim();
+
+  if (!username) {
+    appendBubble("agent", "请先点击某个用户旁边的“重置密码”。");
+    return;
+  }
+
+  if (!trimmedPassword) {
+    appendBubble("agent", "新密码不能为空。");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}/password`, {
+      method: "PATCH",
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ password: trimmedPassword }),
+    });
+    if (!res.ok) {
+      throw new Error(String(res.status));
+    }
+    appendBubble("agent", `用户 ${username} 的密码已重置，请让 TA 使用新密码重新登录。`);
+    await refreshUserPanel(container);
+  } catch (err) {
+    appendBubble("agent", getUserErrorMessage(Number(err.message)));
+  }
+}
+
+async function refreshUserPanel(container) {
+  const res = await fetch(`${API_BASE}/users`, {
+    headers: buildAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(String(res.status));
+  }
+  const users = await res.json();
+  setBubbleHtml(container, renderUserManagementPanel(users));
+  bindUserManagementPanel(container);
+}
+
+function bindUserManagementPanel(container) {
+  if (container.dataset.userManagementBound === "true") return;
+  container.dataset.userManagementBound = "true";
+
+  container.addEventListener("click", (event) => {
+    const roleButton = event.target.closest(".user-role-btn");
+    if (roleButton) {
+      updateUserRoleFromPanel(roleButton, container);
+      return;
+    }
+
+    const activeButton = event.target.closest(".user-active-btn");
+    if (activeButton) {
+      updateUserActiveFromPanel(activeButton, container);
+      return;
+    }
+
+    const passwordButton = event.target.closest(".user-password-btn");
+    if (passwordButton) {
+      const passwordForm = container.querySelector(".user-password-form");
+      const usernameInput = passwordForm?.querySelector('input[name="username"]');
+      const passwordInput = passwordForm?.querySelector('input[name="password"]');
+      if (usernameInput && passwordInput) {
+        usernameInput.value = passwordButton.dataset.username || "";
+        passwordInput.value = "";
+        passwordInput.focus();
+      }
+    }
+  });
+
+  container.addEventListener("submit", (event) => {
+    const createForm = event.target.closest(".user-create-form");
+    if (createForm) {
+      event.preventDefault();
+      createUser(createForm, container);
+      return;
+    }
+
+    const passwordForm = event.target.closest(".user-password-form");
+    if (passwordForm) {
+      event.preventDefault();
+      resetUserPasswordFromPanel(passwordForm, container);
+    }
+  });
+}
+
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
@@ -932,6 +1265,10 @@ logisticsBtn.addEventListener("click", async () => {
 
 toolLogsBtn.addEventListener("click", async () => {
   await fetchToolLogs();
+});
+
+usersBtn.addEventListener("click", async () => {
+  await loadUsers(true);
 });
 
 knowledgeBtn.addEventListener("click", async () => {

@@ -16,6 +16,7 @@ ALLOWED_STATUS_TRANSITIONS = {
     "resolved": {"resolved"},
 }
 ALLOWED_ORDER_STATUSES = {"pending", "shipped", "delivered"}
+ALLOWED_USER_ROLES = {"agent", "manager"}
 
 
 # 2. 数据库连接：确定 SQLite 文件位置，并创建连接。
@@ -147,12 +148,23 @@ def init_users_table() -> None:
                 password_hash TEXT NOT NULL,
                 display_name TEXT NOT NULL,
                 role TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
                 token TEXT DEFAULT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT DEFAULT NULL
             )
             """
         )
+        conn.commit()
+    migrate_users_table()
+
+
+def migrate_users_table() -> None:
+    with get_connection() as conn:
+        cursor = conn.execute("PRAGMA table_info(users)")
+        existing_columns = [row[1] for row in cursor.fetchall()]
+        if "is_active" not in existing_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
 
@@ -162,6 +174,7 @@ def format_user(row: sqlite3.Row, include_token: bool = False) -> Dict[str, str]
         "username": row["username"],
         "display_name": row["display_name"],
         "role": row["role"],
+        "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -174,7 +187,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, str]]:
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            SELECT id, username, password_hash, display_name, role, is_active, token, created_at, updated_at
             FROM users
             WHERE username = ?
             """,
@@ -195,7 +208,7 @@ def get_user_by_token(token: str) -> Optional[Dict[str, str]]:
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            SELECT id, username, password_hash, display_name, role, is_active, token, created_at, updated_at
             FROM users
             WHERE token = ?
             """,
@@ -207,15 +220,31 @@ def get_user_by_token(token: str) -> Optional[Dict[str, str]]:
     return format_user(row, include_token=True)
 
 
+def fetch_users() -> List[Dict[str, str]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, username, display_name, role, is_active, created_at, updated_at
+            FROM users
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    return [format_user(row) for row in rows]
+
+
 def insert_user(username: str, password: str, display_name: str, role: str) -> Dict[str, str]:
+    if role not in ALLOWED_USER_ROLES:
+        raise ValueError("invalid user role")
+
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_connection() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO users (username, password_hash, display_name, role, token, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, display_name, role, is_active, token, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (username, hash_password(password), display_name, role, None, created_at, None),
+            (username, hash_password(password), display_name, role, 1, None, created_at, None),
         )
         conn.commit()
         user_id = cursor.lastrowid
@@ -223,13 +252,85 @@ def insert_user(username: str, password: str, display_name: str, role: str) -> D
     with get_connection() as conn:
         row = conn.execute(
             """
-            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            SELECT id, username, password_hash, display_name, role, is_active, token, created_at, updated_at
             FROM users
             WHERE id = ?
             """,
             (user_id,),
         ).fetchone()
     return format_user(row)
+
+
+def update_user_role(username: str, role: str) -> Optional[Dict[str, str]]:
+    if role not in ALLOWED_USER_ROLES:
+        raise ValueError("invalid user role")
+
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE users SET role = ?, updated_at = ? WHERE username = ?",
+            (role, updated_at, username),
+        )
+        conn.commit()
+
+    if cursor.rowcount == 0:
+        return None
+    user = get_user_by_username(username)
+    return format_user_dict(user)
+
+
+def update_user_active(username: str, is_active: bool) -> Optional[Dict[str, str]]:
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE users
+            SET is_active = ?,
+                token = CASE WHEN ? = 0 THEN NULL ELSE token END,
+                updated_at = ?
+            WHERE username = ?
+            """,
+            (1 if is_active else 0, 1 if is_active else 0, updated_at, username),
+        )
+        conn.commit()
+
+    if cursor.rowcount == 0:
+        return None
+    user = get_user_by_username(username)
+    return format_user_dict(user)
+
+
+def reset_user_password(username: str, password: str) -> Optional[Dict[str, str]]:
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?,
+                token = NULL,
+                updated_at = ?
+            WHERE username = ?
+            """,
+            (hash_password(password), updated_at, username),
+        )
+        conn.commit()
+
+    if cursor.rowcount == 0:
+        return None
+    user = get_user_by_username(username)
+    return format_user_dict(user)
+
+
+def format_user_dict(user: Dict[str, str]) -> Dict[str, str]:
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "is_active": user["is_active"],
+        "created_at": user["created_at"],
+        "updated_at": user["updated_at"],
+    }
 
 
 def ensure_default_users() -> None:
@@ -245,6 +346,8 @@ def ensure_default_users() -> None:
 def login_user(username: str, password: str) -> Optional[Dict[str, str]]:
     user = get_user_by_username(username)
     if user is None:
+        return None
+    if not user["is_active"]:
         return None
     if user["password_hash"] != hash_password(password):
         return None
@@ -266,6 +369,7 @@ def login_user(username: str, password: str) -> Optional[Dict[str, str]]:
             "username": logged_in_user["username"],
             "display_name": logged_in_user["display_name"],
             "role": logged_in_user["role"],
+            "is_active": logged_in_user["is_active"],
         },
     }
 

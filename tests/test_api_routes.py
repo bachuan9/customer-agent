@@ -329,4 +329,225 @@ def test_knowledge_write_requires_manager_role():
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "manager role required"
+    assert response.json()["detail"] == "required role: manager"
+
+
+def test_manager_can_list_users():
+    token = login_token("manager1", "manager123")
+
+    response = client.get(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    users = response.json()
+    assert any(user["username"] == "agent1" for user in users)
+    assert "password_hash" not in users[0]
+    assert "token" not in users[0]
+
+
+def test_agent_cannot_list_users():
+    token = login_token("agent1", "agent123")
+
+    response = client.get(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "required role: manager"
+
+
+def test_manager_can_create_user():
+    token = login_token("manager1", "manager123")
+    username = "pytest_agent_create"
+
+    response = client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "agent123",
+            "display_name": "Pytest Agent",
+            "role": "agent",
+        },
+    )
+
+    assert response.status_code in {200, 409}
+    if response.status_code == 200:
+        data = response.json()
+        assert data["username"] == username
+        assert data["role"] == "agent"
+        assert "password_hash" not in data
+
+
+def test_create_user_rejects_duplicate_username():
+    token = login_token("manager1", "manager123")
+
+    response = client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": "agent1",
+            "password": "agent123",
+            "display_name": "Duplicate Agent",
+            "role": "agent",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "user already exists"
+
+
+def test_create_user_rejects_invalid_role():
+    token = login_token("manager1", "manager123")
+
+    response = client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": "pytest_invalid_role",
+            "password": "agent123",
+            "display_name": "Invalid Role",
+            "role": "admin",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid user role"
+
+
+def test_manager_can_update_user_role():
+    token = login_token("manager1", "manager123")
+    username = "pytest_role_update"
+    client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "agent123",
+            "display_name": "Role Update User",
+            "role": "agent",
+        },
+    )
+
+    response = client.patch(
+        f"/users/{username}/role",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "manager"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == username
+    assert response.json()["role"] == "manager"
+
+
+def test_update_user_role_returns_404_for_missing_user():
+    token = login_token("manager1", "manager123")
+
+    response = client.patch(
+        "/users/not_exists_pytest/role",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "manager"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "user not found"
+
+
+def test_manager_can_disable_and_enable_user():
+    token = login_token("manager1", "manager123")
+    username = "pytest_active_update"
+    client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "agent123",
+            "display_name": "Active Update User",
+            "role": "agent",
+        },
+    )
+
+    disable_response = client.patch(
+        f"/users/{username}/active",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"is_active": False},
+    )
+    disabled_login_response = client.post(
+        "/auth/login",
+        json={"username": username, "password": "agent123"},
+    )
+    enable_response = client.patch(
+        f"/users/{username}/active",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"is_active": True},
+    )
+
+    assert disable_response.status_code == 200
+    assert disable_response.json()["is_active"] is False
+    assert disabled_login_response.status_code == 401
+    assert enable_response.status_code == 200
+    assert enable_response.json()["is_active"] is True
+
+
+def test_update_user_active_requires_manager_role():
+    token = login_token("agent1", "agent123")
+
+    response = client.patch(
+        "/users/agent1/active",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "required role: manager"
+
+
+def test_manager_can_reset_user_password():
+    token = login_token("manager1", "manager123")
+    username = "pytest_password_reset"
+    client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "old-password",
+            "display_name": "Password Reset User",
+            "role": "agent",
+        },
+    )
+
+    reset_response = client.patch(
+        f"/users/{username}/password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"password": "new-password"},
+    )
+    old_login_response = client.post(
+        "/auth/login",
+        json={"username": username, "password": "old-password"},
+    )
+    new_login_response = client.post(
+        "/auth/login",
+        json={"username": username, "password": "new-password"},
+    )
+
+    assert reset_response.status_code == 200
+    assert reset_response.json()["username"] == username
+    assert old_login_response.status_code == 401
+    assert new_login_response.status_code == 200
+    assert new_login_response.json()["user"]["username"] == username
+
+
+def test_reset_user_password_requires_manager_role():
+    token = login_token("agent1", "agent123")
+
+    response = client.patch(
+        "/users/agent1/password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"password": "new-password"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "required role: manager"

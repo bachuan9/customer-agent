@@ -1,22 +1,20 @@
 # 电商智能客服 Agent
 
-这是一个基于 FastAPI、SQLite 和前端工作台的电商客服 Agent 项目。
-
-项目支持订单查询、物流查询、投诉工单处理、客服备注、LLM Function Calling、写操作人工确认、RBAC 权限控制、工具调用日志和自动化测试。
+这是一个基于 FastAPI、SQLite 和原生前端工作台的电商客服 Agent 项目。项目用于练习客服业务系统、Python 后端、SQL 数据库、FastAPI 接口、RAG 知识库、LLM Function Calling、权限控制和工具调用日志。
 
 ## 核心能力
 
 - 订单：创建、列表、查询、更新状态。
 - 物流：创建、列表、查询、更新状态。
-- 投诉：创建、列表、筛选、详情、状态流转、优先级、处理人分配。
-- 备注：添加、查看、修改、删除投诉备注。
-- Agent：支持规则 Agent 和 LLM Agent。
-- LLM：DeepSeek Function Calling 选工具，第二次 LLM 生成自然客服回复。
-- RAG：支持从多份本地知识库检索退货、售后、物流、会员等政策。
-- 安全：写操作先暂存 `pending_llm_action`，用户确认后才执行。
-- 权限：基于 `role` 的轻量 RBAC，普通客服和主管权限不同。
-- 日志：记录工具来源、参数、结果、失败原因，支持可观测性摘要。
-- 测试：pytest 覆盖核心函数、API 接口、数据库层。
+- 投诉工单：创建、列表、筛选、详情、状态流转、优先级、处理人分配。
+- 投诉备注：添加、查看、修改、删除。
+- 知识库/RAG：支持 Markdown 知识库和数据库知识库，Agent 可检索客服政策。
+- LLM Agent：支持 DeepSeek Function Calling 选择工具。
+- 人工确认：写操作先进入待确认状态，用户确认后才执行。
+- RBAC 权限：普通客服和主管权限不同。
+- 用户管理：主管可以查看用户、新增用户、修改用户角色。
+- 工具日志：记录工具来源、参数、结果、失败原因，支持筛选和查看详情。
+- 自动测试：使用 pytest 覆盖 API、数据库、Agent、RAG 等核心链路。
 
 ## 项目链路
 
@@ -34,11 +32,11 @@ web/app.js
 -> web/app.js
 ```
 
-写操作会多一段安全流程：
+写操作会多一层安全确认：
 
 ```text
 LLM 建议写工具
--> 后端拦截并保存 pending_llm_action
+-> 后端保存 pending_llm_action
 -> 用户回复“确认执行”
 -> RBAC 权限检查
 -> call_tool(...)
@@ -73,9 +71,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
-演示或部署时，不建议使用 `--reload`，可参考 [开发手册](docs/development-guide.md) 的“演示/生产启动”。
-
-访问：
+访问地址：
 
 ```text
 网页工作台：http://127.0.0.1:8001/web
@@ -83,9 +79,24 @@ Copy-Item .env.example .env
 健康检查：http://127.0.0.1:8001/health
 ```
 
+健康检查正常时会返回：
+
+```json
+{"status":"ok"}
+```
+
+## 默认账号
+
+```text
+普通客服：agent1 / agent123
+主管：manager1 / manager123
+```
+
+普通客服可以处理日常查询；主管可以执行知识库维护、用户管理、部分写操作确认。
+
 ## LLM 配置
 
-默认 `.env.example` 里关闭 LLM：
+默认可以关闭 LLM，只使用本地规则 Agent：
 
 ```env
 LLM_ENABLED=false
@@ -104,67 +115,84 @@ DEEPSEEK_API_KEY=你的真实key
 
 注意：`.env` 已被 `.gitignore` 忽略，不要提交真实 API Key。
 
-## 部署准备提示
+## 常用测试命令
 
-部署或演示前建议确认：
-
-```text
-.env 已创建，并且没有提交真实 API Key
-APP_DB_PATH 指向正确的 SQLite 数据库文件
-LLM_ENABLED 根据环境明确设置 true 或 false
-pytest 测试通过
-健康检查 /health 正常
-工具日志可查看
-```
-
-更多命令和排错步骤见：[docs/development-guide.md](docs/development-guide.md)
-
-## 测试
-
-运行全部测试：
+运行全部自动测试：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-当前测试覆盖：
+检查前端 JavaScript 语法：
 
-```text
-LLM tool_call 解析
-RBAC 权限规则
-权限拒绝日志
-主管确认执行
-FastAPI 接口
-数据库订单与日志统计
-RAG 知识库检索
+```powershell
+node --check web\app.js
 ```
 
-测试使用临时 SQLite 数据库，不会污染 `data/complaints.db`。
+检查 Python 文件能否编译：
+
+```powershell
+.\.venv\Scripts\python.exe -m compileall app
+```
+
+当前完整检查应看到：
+
+```text
+pytest: 44 passed
+node --check web/app.js: passed
+python -m compileall app: passed
+```
+
+## 手动测试建议
+
+打开 `http://127.0.0.1:8001/web` 后，可以按这个顺序测试：
+
+```text
+1. 登录 agent1，测试订单、物流、投诉查询。
+2. 登录 manager1，测试知识库新增/修改/删除。
+3. 登录 manager1，测试用户管理：新增用户、修改角色、禁用/启用用户、重置密码。
+4. 切换到普通客服账号，确认不能维护知识库和用户管理。
+5. 测试写操作：输入“更新订单 A101 shipped”，再确认执行。
+6. 点击工具日志，查看 LLM Agent、权限拒绝、确认执行等记录。
+7. 在知识库里新增一条政策，再用聊天框测试 RAG 检索。
+```
 
 ## 主要目录
 
 ```text
-app/api/routes.py：FastAPI 路由层
+app/api/routes.py：FastAPI 路由入口
 app/models/schemas.py：请求和响应数据格式
 app/services/agent.py：聊天业务总调度
-app/services/llm_agent.py：LLM 工具选择层
-app/services/llm_client.py：LLM API 通信层
-app/services/llm_reply.py：LLM 最终回复层
+app/services/llm_agent.py：LLM 工具选择
+app/services/llm_client.py：DeepSeek API 通信
+app/services/llm_reply.py：LLM 最终回复生成
 app/services/tool_registry.py：工具注册、调用和日志入口
 app/services/tools.py：业务工具函数
 app/storage/db.py：SQLite 数据库访问层
 web/：前端客服工作台
-tests/：pytest 自动化测试
-docs/：设计文档和开发资料
-docs/knowledge/：RAG 知识库，支持多个 Markdown 文件
+tests/：pytest 自动测试
+docs/：开发文档、设计文档、RAG 知识库
+practice/：个人学习笔记，不提交到公开仓库
 ```
 
-## 开发文档
+## 提交注意事项
 
-更多命令和排错步骤见：
+不要提交：
 
 ```text
-docs/development-guide.md
+.env
+data/*.db
+logs/*.log
+practice/
 ```
 
-本地学习笔记位于 `practice/`，属于个人学习资料，不随公开仓库上传。
+提交前建议运行：
+
+```powershell
+git status --short
+.\.venv\Scripts\python.exe -m pytest -q
+node --check web\app.js
+.\.venv\Scripts\python.exe -m compileall app
+```
+
+更多启动、测试和排错步骤见 [开发手册](docs/development-guide.md)。
