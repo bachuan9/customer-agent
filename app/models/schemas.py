@@ -7,8 +7,18 @@ class ChatRequest(BaseModel):
     role: str = "agent"
 
 
+class AuthenticatedChatRequest(ChatRequest):
+    username: str = None
+    display_name: str = None
+
+
 class ChatResponse(BaseModel):
     reply: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 class ComplaintUpdateRequest(BaseModel):

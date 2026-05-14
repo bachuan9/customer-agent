@@ -6,6 +6,12 @@ const sendBtn = document.getElementById("sendBtn");
 const userIdInput = document.getElementById("userId");
 const agentNameInput = document.getElementById("agentName");
 const roleInput = document.getElementById("role");
+const loginForm = document.getElementById("loginForm");
+const loginUsernameInput = document.getElementById("loginUsername");
+const loginPasswordInput = document.getElementById("loginPassword");
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const loginStatus = document.getElementById("loginStatus");
 const statusInput = document.getElementById("status");
 const complaintsBtn = document.getElementById("complaintsBtn");
 const ordersBtn = document.getElementById("ordersBtn");
@@ -33,9 +39,12 @@ const knowledgeSearchInput = document.getElementById("knowledgeSearch");
 const knowledgeTagFilterInput = document.getElementById("knowledgeTagFilter");
 const searchKnowledgeBtn = document.getElementById("searchKnowledgeBtn");
 const resetKnowledgeFilterBtn = document.getElementById("resetKnowledgeFilterBtn");
+const knowledgePermissionHint = document.getElementById("knowledgePermissionHint");
 const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
+const AUTH_TOKEN_KEY = "customerAgentAuthToken";
+let currentUser = null;
 
 // 2. 基础工具函数：滚动、转义 HTML、更新状态栏。
 function scrollToBottom() {
@@ -51,6 +60,110 @@ function escapeHtml(text) {
 function setStatus(text) {
   if (statusInput) {
     statusInput.value = text;
+  }
+}
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+}
+
+function setAuthToken(token) {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+function buildAuthHeaders(extraHeaders = {}) {
+  const token = getAuthToken();
+  const headers = { ...extraHeaders };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+function applyLoggedInUser(user) {
+  currentUser = user;
+  userIdInput.value = user.username;
+  agentNameInput.value = user.display_name;
+  roleInput.value = user.role;
+  loginStatus.textContent = `已登录：${user.display_name}（${user.role === "manager" ? "主管" : "普通客服"}）`;
+  updateKnowledgePermissionUI();
+}
+
+async function loadCurrentUser() {
+  const token = getAuthToken();
+  if (!token) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const user = await res.json();
+    applyLoggedInUser(user);
+  } catch (err) {
+    setAuthToken("");
+    currentUser = null;
+    loginStatus.textContent = "登录已失效，请重新登录。";
+    updateKnowledgePermissionUI();
+  }
+}
+
+async function login(event) {
+  event.preventDefault();
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = "登录中...";
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: loginUsernameInput.value.trim(),
+        password: loginPasswordInput.value,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    setAuthToken(data.token);
+    applyLoggedInUser(data.user);
+    appendBubble("agent", `登录成功：当前身份是 ${data.user.display_name}。`);
+  } catch (err) {
+    appendBubble("agent", "登录失败，请检查账号或密码。");
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = "登录";
+  }
+}
+
+async function logout() {
+  const token = getAuthToken();
+
+  try {
+    if (token) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        headers: buildAuthHeaders(),
+      });
+    }
+  } catch (err) {
+    appendBubble("agent", "退出请求失败，但本地登录状态已清除。");
+  } finally {
+    setAuthToken("");
+    currentUser = null;
+    loginStatus.textContent = "未登录：当前仍使用下方教学角色。";
+    updateKnowledgePermissionUI();
+    appendBubble("agent", "已退出登录，后端 token 已失效。");
   }
 }
 
@@ -234,6 +347,33 @@ function resetKnowledgeForm() {
   knowledgeContentInput.value = "";
   knowledgeEnabledInput.checked = true;
   saveKnowledgeBtn.textContent = "新增知识";
+  updateKnowledgePermissionUI();
+}
+
+function canManageKnowledge() {
+  return currentUser?.role === "manager";
+}
+
+function updateKnowledgePermissionUI() {
+  const allowed = canManageKnowledge();
+  saveKnowledgeBtn.disabled = !allowed;
+  cancelKnowledgeEditBtn.disabled = !allowed;
+  knowledgeTitleInput.disabled = !allowed;
+  knowledgeTagsInput.disabled = !allowed;
+  knowledgeContentInput.disabled = !allowed;
+  knowledgeEnabledInput.disabled = !allowed;
+
+  if (knowledgePermissionHint) {
+    knowledgePermissionHint.textContent = allowed
+      ? "当前为主管账号，可以维护知识库。"
+      : "只有主管账号可以维护知识库；普通客服和未登录状态只能查看。";
+    knowledgePermissionHint.classList.toggle("allowed", allowed);
+  }
+
+  knowledgeList.querySelectorAll(".knowledge-edit-btn, .knowledge-delete-btn").forEach((button) => {
+    button.disabled = !allowed;
+    button.title = allowed ? "" : "只有主管账号可以维护知识库";
+  });
 }
 
 function renderKnowledgeList(items) {
@@ -252,8 +392,8 @@ function renderKnowledgeList(items) {
               <span>${item.enabled ? "已启用" : "已停用"}</span>
             </div>
             <div class="table-actions">
-              <button class="link-button knowledge-edit-btn" data-id="${item.id}" type="button">编辑</button>
-              <button class="link-button danger knowledge-delete-btn" data-id="${item.id}" type="button">删除</button>
+              <button class="link-button knowledge-edit-btn" data-id="${item.id}" type="button"${canManageKnowledge() ? "" : " disabled"}>编辑</button>
+              <button class="link-button danger knowledge-delete-btn" data-id="${item.id}" type="button"${canManageKnowledge() ? "" : " disabled"}>删除</button>
             </div>
           </div>
           <p>${escapeHtml(item.content)}</p>
@@ -262,6 +402,7 @@ function renderKnowledgeList(items) {
       `
     )
     .join("");
+  updateKnowledgePermissionUI();
 }
 
 function buildKnowledgeQueryString() {
@@ -274,6 +415,16 @@ function buildKnowledgeQueryString() {
 
   const queryString = params.toString();
   return queryString ? `?${queryString}` : "";
+}
+
+function getKnowledgePermissionMessage(status) {
+  if (status === 401) {
+    return "请先登录主管账号后再维护知识库。";
+  }
+  if (status === 403) {
+    return "当前账号没有权限维护知识库，请切换主管账号。";
+  }
+  return "知识库操作失败，请检查后端服务或输入内容。";
 }
 
 async function loadKnowledgeArticles(showBubble = false) {
@@ -295,6 +446,11 @@ async function loadKnowledgeArticles(showBubble = false) {
 
 async function saveKnowledgeArticle(event) {
   event.preventDefault();
+
+  if (!canManageKnowledge()) {
+    appendBubble("agent", "只有主管账号可以维护知识库，请先登录 manager1。");
+    return;
+  }
 
   const articleId = knowledgeIdInput.value;
   const payload = {
@@ -318,19 +474,20 @@ async function saveKnowledgeArticle(event) {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      appendBubble("agent", getKnowledgePermissionMessage(res.status));
+      return;
     }
 
     resetKnowledgeForm();
     await loadKnowledgeArticles();
     appendBubble("agent", articleId ? "知识库已更新，Agent 下次检索会使用最新内容。" : "知识库已新增，Agent 现在可以检索这条内容。");
   } catch (err) {
-    appendBubble("agent", "知识库保存失败，请检查后端服务或输入内容。");
+    appendBubble("agent", "知识库保存失败，请确认后端服务正在运行。");
   } finally {
     saveKnowledgeBtn.disabled = false;
     saveKnowledgeBtn.textContent = knowledgeIdInput.value ? "保存修改" : "新增知识";
@@ -338,6 +495,11 @@ async function saveKnowledgeArticle(event) {
 }
 
 async function editKnowledgeArticle(articleId) {
+  if (!canManageKnowledge()) {
+    appendBubble("agent", "当前账号没有权限编辑知识库，请切换主管账号。");
+    return;
+  }
+
   try {
     const res = await fetch(`${API_BASE}/knowledge/${articleId}`);
     if (!res.ok) {
@@ -357,20 +519,27 @@ async function editKnowledgeArticle(articleId) {
 }
 
 async function deleteKnowledgeArticle(articleId) {
+  if (!canManageKnowledge()) {
+    appendBubble("agent", "当前账号没有权限删除知识库，请切换主管账号。");
+    return;
+  }
+
   const confirmed = window.confirm("确定删除这条知识库内容吗？");
   if (!confirmed) return;
 
   try {
     const res = await fetch(`${API_BASE}/knowledge/${articleId}`, {
       method: "DELETE",
+      headers: buildAuthHeaders(),
     });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      appendBubble("agent", getKnowledgePermissionMessage(res.status));
+      return;
     }
     await loadKnowledgeArticles();
     appendBubble("agent", "知识库内容已删除。");
   } catch (err) {
-    appendBubble("agent", "知识库删除失败，请确认这条内容是否还存在。");
+    appendBubble("agent", "知识库删除失败，请确认后端服务正在运行。");
   }
 }
 
@@ -388,7 +557,7 @@ async function sendMessage(message) {
   try {
     const res = await fetch(`${API_BASE}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ user_id: userId, message, role }),
     });
 
@@ -458,13 +627,48 @@ function renderToolLogStats(stats) {
   `;
 }
 
+function buildToolLogFilterHtml() {
+  return `
+    <div class="log-filters">
+      <label>
+        <span>来源</span>
+        <select id="toolLogSourceFilter">
+          <option value="">全部来源</option>
+          <option value="rule_agent">规则 Agent</option>
+          <option value="llm_agent">LLM Agent</option>
+          <option value="llm_confirmed_action">LLM 确认执行</option>
+          <option value="rbac_denied">权限拒绝</option>
+          <option value="unknown">历史未知</option>
+        </select>
+      </label>
+      <label>
+        <span>结果</span>
+        <select id="toolLogSuccessFilter">
+          <option value="">全部结果</option>
+          <option value="true">成功</option>
+          <option value="false">失败</option>
+        </select>
+      </label>
+      <button class="ghost" id="applyToolLogFilterBtn" type="button">筛选日志</button>
+    </div>
+  `;
+}
+
+function buildToolLogQueryString(source = "", success = "") {
+  const params = new URLSearchParams();
+  params.set("limit", "20");
+  if (source) params.set("source", source);
+  if (success) params.set("success", success);
+  return `?${params.toString()}`;
+}
+
 async function fetchToolLogs() {
   const loadingBubble = appendBubble("agent", "正在加载工具调用日志...", { typing: true });
 
   try {
     const [statsRes, logsRes] = await Promise.all([
       fetch(`${API_BASE}/tool-logs/stats`),
-      fetch(`${API_BASE}/tool-logs?limit=20`),
+      fetch(`${API_BASE}/tool-logs${buildToolLogQueryString()}`),
     ]);
 
     if (!statsRes.ok || !logsRes.ok) {
@@ -475,7 +679,11 @@ async function fetchToolLogs() {
     const logs = await logsRes.json();
 
     if (!logs.length) {
-      setBubbleHtml(loadingBubble, `${renderToolLogStats(stats)}<p>暂无工具调用日志。</p>`);
+      setBubbleHtml(
+        loadingBubble,
+        `${renderToolLogStats(stats)}${buildToolLogFilterHtml()}<div class="tool-log-table-wrap"><p>暂无工具调用日志。</p></div>`
+      );
+      bindToolLogFilter(loadingBubble);
       loadingBubble.classList.remove("typing");
       return;
     }
@@ -510,12 +718,76 @@ async function fetchToolLogs() {
       logs
     );
 
-    setBubbleHtml(loadingBubble, `${renderToolLogStats(stats)}${tableHtml}`);
+    setBubbleHtml(
+      loadingBubble,
+      `${renderToolLogStats(stats)}${buildToolLogFilterHtml()}<div class="tool-log-table-wrap">${tableHtml}</div>`
+    );
+    bindToolLogFilter(loadingBubble);
     loadingBubble.classList.remove("typing");
   } catch (err) {
     setBubbleText(loadingBubble, "工具日志加载失败，请确认后端服务正在运行。");
     loadingBubble.classList.remove("typing");
   }
+}
+
+async function fetchFilteredToolLogs(source, success, container) {
+  try {
+    const res = await fetch(`${API_BASE}/tool-logs${buildToolLogQueryString(source, success)}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const logs = await res.json();
+    const oldTable = container.querySelector(".tool-log-table-wrap");
+    const tableHtml = logs.length
+      ? renderTable(
+          [
+            { key: "id", label: "ID" },
+            {
+              key: "source",
+              label: "来源",
+              render: (value) => {
+                if (value === "llm_agent") return "LLM Agent";
+                if (value === "llm_confirmed_action") return "LLM 确认执行";
+                if (value === "rbac_denied") return "权限拒绝";
+                return "规则 Agent";
+              },
+            },
+            { key: "tool_name", label: "工具" },
+            {
+              key: "success",
+              label: "结果",
+              render: (value) => (value ? "成功" : "失败"),
+            },
+            {
+              key: "arguments",
+              label: "参数",
+              render: (value) => escapeHtml(JSON.stringify(value)),
+            },
+            { key: "error", label: "错误" },
+            { key: "created_at", label: "时间" },
+          ],
+          logs
+        )
+      : '<p class="empty-state">没有匹配当前筛选条件的工具日志。</p>';
+
+    if (oldTable) {
+      oldTable.innerHTML = tableHtml;
+    }
+  } catch (err) {
+    appendBubble("agent", "筛选工具日志失败，请确认后端服务正在运行。");
+  }
+}
+
+function bindToolLogFilter(container) {
+  const sourceSelect = container.querySelector("#toolLogSourceFilter");
+  const successSelect = container.querySelector("#toolLogSuccessFilter");
+  const applyButton = container.querySelector("#applyToolLogFilterBtn");
+
+  if (!sourceSelect || !successSelect || !applyButton) return;
+
+  applyButton.addEventListener("click", () => {
+    fetchFilteredToolLogs(sourceSelect.value, successSelect.value, container);
+  });
 }
 
 // 9. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
@@ -543,6 +815,10 @@ chatBody.addEventListener("click", (event) => {
 
   fillComplaintAction(complaintId, button.dataset.action);
 });
+
+loginForm.addEventListener("submit", login);
+
+logoutBtn.addEventListener("click", logout);
 
 chips.forEach((chip) => {
   chip.addEventListener("click", () => {
@@ -698,3 +974,4 @@ knowledgeList.addEventListener("click", (event) => {
 
 loadComplaintStats();
 loadKnowledgeArticles();
+loadCurrentUser();

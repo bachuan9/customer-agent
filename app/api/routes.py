@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 import sqlite3
 
 from app.models.schemas import (
+    AuthenticatedChatRequest,
     ChatRequest,
     ChatResponse,
     ComplaintNoteCreateRequest,
@@ -9,6 +10,7 @@ from app.models.schemas import (
     ComplaintUpdateRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleUpdateRequest,
+    LoginRequest,
     LogisticsCreateRequest,
     LogisticsUpdateRequest,
     OrderCreateRequest,
@@ -31,10 +33,13 @@ from app.storage.db import (
     get_knowledge_article,
     get_logistics_status,
     get_order_status,
+    get_user_by_token,
     insert_knowledge_article,
     insert_order,
     insert_logistics,
     insert_complaint_note,
+    login_user,
+    logout_user_by_token,
     delete_knowledge_article,
     update_complaint,
     update_complaint_note,
@@ -47,6 +52,30 @@ from app.services.tools import get_complaint_detail
 router = APIRouter()
 
 
+def extract_bearer_token(authorization: str = None) -> str:
+    if not authorization:
+        return ""
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return ""
+    return authorization[len(prefix):].strip()
+
+
+def get_current_user_from_header(authorization: str = None) -> dict:
+    token = extract_bearer_token(authorization)
+    user = get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid or missing token")
+    return user
+
+
+def require_manager(authorization: str = None) -> dict:
+    user = get_current_user_from_header(authorization)
+    if user["role"] != "manager":
+        raise HTTPException(status_code=403, detail="manager role required")
+    return user
+
+
 # 1. 基础检查接口：用来确认后端服务是否正常运行。
 @router.get("/health")
 def health_check() -> dict:
@@ -54,8 +83,8 @@ def health_check() -> dict:
 
 
 @router.get("/tool-logs")
-def tool_logs(limit: int = 20) -> list:
-    return fetch_tool_call_logs(limit)
+def tool_logs(limit: int = 20, source: str = None, success: bool = None) -> list:
+    return fetch_tool_call_logs(limit=limit, source=source, success=success)
 
 
 @router.get("/tool-logs/stats")
@@ -68,14 +97,54 @@ def function_calling_tools() -> list:
     return list_function_calling_tools()
 
 
-# 2. Agent 聊天接口：前端聊天框发来的消息会进入这里。
+# 2. 登录接口：先确认“你是谁”，后续权限才有依据。
+@router.post("/auth/login")
+def login(req: LoginRequest) -> dict:
+    result = login_user(req.username, req.password)
+    if result is None:
+        raise HTTPException(status_code=401, detail="invalid username or password")
+    return result
+
+
+@router.get("/auth/me")
+def auth_me(authorization: str = Header(default=None)) -> dict:
+    user = get_current_user_from_header(authorization)
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+    }
+
+
+@router.post("/auth/logout")
+def logout(authorization: str = Header(default=None)) -> dict:
+    token = extract_bearer_token(authorization)
+    logged_out = logout_user_by_token(token)
+    if not logged_out:
+        raise HTTPException(status_code=401, detail="invalid or missing token")
+    return {"logged_out": True}
+
+
+# 3. Agent 聊天接口：前端聊天框发来的消息会进入这里。
 @router.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatResponse:
+    token = extract_bearer_token(authorization)
+    user = get_user_by_token(token)
+    if user is not None:
+        req = AuthenticatedChatRequest(
+            user_id=user["username"],
+            username=user["username"],
+            display_name=user["display_name"],
+            role=user["role"],
+            message=req.message,
+        )
+
     reply = run_agent(req)
     return ChatResponse(reply=reply)
 
 
-# 3. 投诉列表接口：支持按 user_id、status、priority、handler 筛选投诉。
+# 4. 投诉列表接口：支持按 user_id、status、priority、handler 筛选投诉。
 @router.get("/complaints")
 def complaints(
     user_id: str = None,
@@ -91,7 +160,7 @@ def complaint_stats() -> dict:
     return fetch_complaint_stats()
 
 
-# 4. 订单接口：查询、列表、新建订单。
+# 5. 订单接口：查询、列表、新建订单。
 @router.get("/orders/{order_no}")
 def order_status(order_no: str) -> dict:
     status = get_order_status(order_no)
@@ -115,7 +184,7 @@ def create_order(req: OrderCreateRequest) -> dict:
         raise HTTPException(status_code=409, detail="order already exists")
 
 
-# 5. 物流接口：查询、列表、新建物流。
+# 6. 物流接口：查询、列表、新建物流。
 @router.get("/logistics/{tracking_no}")
 def logistics_status(tracking_no: str) -> dict:
     status = get_logistics_status(tracking_no)
@@ -144,7 +213,7 @@ def create_logistics(req: LogisticsCreateRequest) -> dict:
     }
 
 
-# 6. 订单和物流更新接口：普通 REST API 的 PATCH 更新入口。
+# 7. 订单和物流更新接口：普通 REST API 的 PATCH 更新入口。
 @router.patch("/orders/{order_no}")
 def update_order(order_no: str, req: OrderUpdateRequest) -> dict:
     if req.status not in ALLOWED_ORDER_STATUSES:
@@ -169,7 +238,7 @@ def update_logistics(tracking_no: str, req: LogisticsUpdateRequest) -> dict:
     return {"tracking_no": tracking_no, "status": req.status}
 
 
-# 7. 投诉更新接口：普通 REST API 修改 status、priority、handler。
+# 8. 投诉更新接口：普通 REST API 修改 status、priority、handler。
 @router.get("/complaints/{complaint_id}")
 def complaint_detail(complaint_id: str) -> dict:
     detail = get_complaint_detail(complaint_id)
@@ -200,7 +269,7 @@ def update_complaint_endpoint(complaint_id: str, req: ComplaintUpdateRequest) ->
     return updated
 
 
-# 8. 投诉备注接口：添加、查询、删除某条投诉备注。
+# 9. 投诉备注接口：添加、查询、删除某条投诉备注。
 @router.post("/complaints/{complaint_id}/notes")
 def create_complaint_note(complaint_id: str, req: ComplaintNoteCreateRequest) -> dict:
     try:
@@ -241,7 +310,7 @@ def delete_note(note_id: str) -> dict:
     return {"deleted": True, "note_id": note_id}
 
 
-# 9. 知识库管理接口：让前端可以维护 Agent 会检索的客服政策。
+# 10. 知识库管理接口：让前端可以维护 Agent 会检索的客服政策。
 @router.get("/knowledge")
 def knowledge_articles(include_disabled: bool = True, query: str = None, tag: str = None) -> list:
     return fetch_knowledge_articles(include_disabled=include_disabled, query_text=query, tag=tag)
@@ -256,7 +325,8 @@ def knowledge_article_detail(article_id: int) -> dict:
 
 
 @router.post("/knowledge")
-def create_knowledge_article(req: KnowledgeArticleCreateRequest) -> dict:
+def create_knowledge_article(req: KnowledgeArticleCreateRequest, authorization: str = Header(default=None)) -> dict:
+    require_manager(authorization)
     try:
         return insert_knowledge_article(req.title, req.content, req.tags, req.enabled)
     except ValueError as exc:
@@ -264,7 +334,12 @@ def create_knowledge_article(req: KnowledgeArticleCreateRequest) -> dict:
 
 
 @router.patch("/knowledge/{article_id}")
-def update_knowledge_article_endpoint(article_id: int, req: KnowledgeArticleUpdateRequest) -> dict:
+def update_knowledge_article_endpoint(
+    article_id: int,
+    req: KnowledgeArticleUpdateRequest,
+    authorization: str = Header(default=None),
+) -> dict:
+    require_manager(authorization)
     if req.title is None and req.content is None and req.tags is None and req.enabled is None:
         raise HTTPException(status_code=400, detail="title, content, tags or enabled is required")
 
@@ -285,7 +360,8 @@ def update_knowledge_article_endpoint(article_id: int, req: KnowledgeArticleUpda
 
 
 @router.delete("/knowledge/{article_id}")
-def delete_knowledge_article_endpoint(article_id: int) -> dict:
+def delete_knowledge_article_endpoint(article_id: int, authorization: str = Header(default=None)) -> dict:
+    require_manager(authorization)
     deleted = delete_knowledge_article(article_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="knowledge article not found")

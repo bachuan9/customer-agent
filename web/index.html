@@ -49,6 +49,21 @@
               <span>会话信息</span>
               <small>Session</small>
             </div>
+            <form id="loginForm" class="login-form">
+              <label class="field">
+                <span>登录账号</span>
+                <input id="loginUsername" type="text" placeholder="agent1 或 manager1" value="agent1" />
+              </label>
+              <label class="field">
+                <span>登录密码</span>
+                <input id="loginPassword" type="password" placeholder="agent123 或 manager123" value="agent123" />
+              </label>
+              <div class="login-actions">
+                <button id="loginBtn" type="submit">登录</button>
+                <button id="logoutBtn" class="ghost muted" type="button">退出</button>
+              </div>
+              <p id="loginStatus" class="login-status">未登录：当前仍使用下方教学角色。</p>
+            </form>
             <label class="field">
               <span>用户 ID</span>
               <input id="userId" type="text" placeholder="例如：user1" value="user1" />
@@ -232,6 +247,7 @@
                 <button id="saveKnowledgeBtn" type="submit">新增知识</button>
                 <button id="cancelKnowledgeEditBtn" class="ghost muted" type="button">取消编辑</button>
               </div>
+              <p id="knowledgePermissionHint" class="knowledge-permission-hint">只有主管账号可以维护知识库。</p>
             </form>
 
             <div class="knowledge-filters">
@@ -257,6 +273,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=20260514-knowledge-admin"></script>
+    <script src="./app.js?v=20260514-tool-log-filters"></script>
   </body>
 </html>

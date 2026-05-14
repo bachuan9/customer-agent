@@ -1,5 +1,7 @@
 import os
 import json
+import hashlib
+import secrets
 import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -80,6 +82,8 @@ def init_db() -> None:
     init_orders_table()
     init_logistics_table()
     init_knowledge_articles_table()
+    init_users_table()
+    ensure_default_users()
 
 
 
@@ -126,6 +130,158 @@ def init_session_table() -> None:
             """
         )
         conn.commit()
+
+
+# 7. 用户表：保存登录账号、角色和教学版 token。
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def init_users_table() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                token TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT DEFAULT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def format_user(row: sqlite3.Row, include_token: bool = False) -> Dict[str, str]:
+    user = {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+        "role": row["role"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+    if include_token:
+        user["token"] = row["token"]
+    return user
+
+
+def get_user_by_username(username: str) -> Optional[Dict[str, str]]:
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    user = format_user(row, include_token=True)
+    user["password_hash"] = row["password_hash"]
+    return user
+
+
+def get_user_by_token(token: str) -> Optional[Dict[str, str]]:
+    if not token:
+        return None
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            FROM users
+            WHERE token = ?
+            """,
+            (token,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return format_user(row, include_token=True)
+
+
+def insert_user(username: str, password: str, display_name: str, role: str) -> Dict[str, str]:
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO users (username, password_hash, display_name, role, token, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (username, hash_password(password), display_name, role, None, created_at, None),
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id, username, password_hash, display_name, role, token, created_at, updated_at
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+    return format_user(row)
+
+
+def ensure_default_users() -> None:
+    defaults = [
+        ("agent1", "agent123", "普通客服 Alice", "agent"),
+        ("manager1", "manager123", "主管 Bob", "manager"),
+    ]
+    for username, password, display_name, role in defaults:
+        if get_user_by_username(username) is None:
+            insert_user(username, password, display_name, role)
+
+
+def login_user(username: str, password: str) -> Optional[Dict[str, str]]:
+    user = get_user_by_username(username)
+    if user is None:
+        return None
+    if user["password_hash"] != hash_password(password):
+        return None
+
+    token = secrets.token_urlsafe(32)
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET token = ?, updated_at = ? WHERE username = ?",
+            (token, updated_at, username),
+        )
+        conn.commit()
+
+    logged_in_user = get_user_by_username(username)
+    return {
+        "token": token,
+        "user": {
+            "id": logged_in_user["id"],
+            "username": logged_in_user["username"],
+            "display_name": logged_in_user["display_name"],
+            "role": logged_in_user["role"],
+        },
+    }
+
+
+def logout_user_by_token(token: str) -> bool:
+    if not token:
+        return False
+
+    updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE users SET token = NULL, updated_at = ? WHERE token = ?",
+            (updated_at, token),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def save_session_message(user_id: str, message: str, sender: str) -> None:
@@ -217,14 +373,29 @@ def insert_tool_call_log(
         conn.commit()
 
 
-def fetch_tool_call_logs(limit: int = 20) -> List[Dict[str, str]]:
+def fetch_tool_call_logs(
+    limit: int = 20,
+    source: Optional[str] = None,
+    success: Optional[bool] = None,
+) -> List[Dict[str, str]]:
     safe_limit = max(1, min(limit, 100))
-    query = (
-        "SELECT id, source, tool_name, arguments, result, success, error, created_at "
-        "FROM tool_call_logs ORDER BY id DESC LIMIT ?"
-    )
+    query = "SELECT id, source, tool_name, arguments, result, success, error, created_at FROM tool_call_logs"
+    conditions = []
+    params = []
+
+    if source:
+        conditions.append("source = ?")
+        params.append(source)
+    if success is not None:
+        conditions.append("success = ?")
+        params.append(1 if success else 0)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(safe_limit)
+
     with get_connection() as conn:
-        rows = conn.execute(query, (safe_limit,)).fetchall()
+        rows = conn.execute(query, tuple(params)).fetchall()
 
     return [
         {
