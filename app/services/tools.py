@@ -3,6 +3,50 @@ import re
 from typing import Any, Dict, List, Optional
 
 MIN_KNOWLEDGE_SCORE = 3
+KNOWLEDGE_KEYWORD_GROUPS = {
+    "shipping": [
+        "物流",
+        "发货",
+        "48小时",
+        "48 小时",
+        "没更新",
+        "未更新",
+        "延迟",
+        "超时",
+        "配送",
+        "签收",
+    ],
+    "return": [
+        "7天",
+        "7 天",
+        "七天",
+        "退货",
+        "无理由",
+        "售后",
+        "运费",
+        "谁承担",
+        "商家承担",
+        "用户承担",
+        "退款",
+        "到账",
+        "多久到账",
+        "质量",
+        "质量问题",
+        "破损",
+        "错发",
+        "漏发",
+        "换货",
+        "质保",
+        "维修",
+    ],
+    "membership": [
+        "会员",
+        "等级",
+        "积分",
+        "优惠券",
+        "专属客服",
+    ],
+}
 
 from app.storage.db import (
     ALLOWED_COMPLAINT_PRIORITIES,
@@ -70,46 +114,13 @@ def split_knowledge_sections(content: str) -> List[str]:
 
 
 def extract_knowledge_keywords(query: str) -> List[str]:
-    policy_keywords = [
-        "7天",
-        "7 天",
-        "七天",
-        "退货",
-        "无理由",
-        "售后",
-        "发货",
-        "物流",
-        "配送",
-        "延迟",
-        "签收",
-        "质量",
-        "质量问题",
-        "破损",
-        "错发",
-        "漏发",
-        "运费",
-        "谁承担",
-        "商家承担",
-        "用户承担",
-        "退款",
-        "到账",
-        "多久到账",
-        "时效",
-        "质保",
-        "维修",
-        "换货",
-        "会员",
-        "等级",
-        "积分",
-        "优惠券",
-        "专属客服",
-    ]
     normalized_query = query.lower().replace(" ", "")
     keywords = []
-    for keyword in policy_keywords:
-        normalized_keyword = keyword.lower().replace(" ", "")
-        if normalized_keyword in normalized_query:
-            keywords.append(keyword)
+    for group_keywords in KNOWLEDGE_KEYWORD_GROUPS.values():
+        for keyword in group_keywords:
+            normalized_keyword = keyword.lower().replace(" ", "")
+            if normalized_keyword in normalized_query:
+                keywords.append(keyword)
     return keywords
 
 

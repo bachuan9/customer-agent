@@ -312,6 +312,13 @@ def format_complaint_detail_reply(result):
 
 
 # 5.1 LLM 工具结果回复：把 LLM 选中的工具结果转成用户能看懂的中文。
+def format_knowledge_no_answer_reply():
+    return (
+        "暂未在知识库中找到可靠的相关政策。"
+        "为避免误导用户，建议转人工客服或由主管确认后再答复。"
+    )
+
+
 def format_llm_tool_selection_reply(selection):
     tool_name = selection["tool_name"]
     arguments = selection["arguments"]
@@ -352,7 +359,7 @@ def format_llm_tool_selection_reply(selection):
 
     if tool_name == "search_knowledge":
         if not result.get("found"):
-            return "暂未在知识库中找到相关政策，请联系人工客服进一步确认。"
+            return format_knowledge_no_answer_reply()
         lines = ["我查到以下相关政策："]
         for match in result.get("matches", []):
             if isinstance(match, dict):
