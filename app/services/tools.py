@@ -128,10 +128,15 @@ def score_knowledge_section(query: str, section: str) -> int:
     keywords = extract_knowledge_keywords(query)
     section_lower = section.lower().replace(" ", "")
     score = 0
+    has_keyword_match = False
     for keyword in keywords:
         normalized_keyword = keyword.lower().replace(" ", "")
         if normalized_keyword in section_lower:
             score += 2
+            has_keyword_match = True
+
+    if not has_keyword_match:
+        return 0
 
     for char in query:
         if char.strip() and char in section:

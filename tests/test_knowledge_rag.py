@@ -44,6 +44,14 @@ def test_search_knowledge_ignores_low_relevance_matches():
     assert result["sources"] == []
 
 
+def test_search_knowledge_does_not_match_without_business_keywords():
+    result = search_knowledge("平台支持虚拟币提现吗")
+
+    assert result["found"] is False
+    assert result["matches"] == []
+    assert result["sources"] == []
+
+
 def test_knowledge_template_reply_refuses_when_no_reliable_answer():
     result = search_knowledge("x")
     reply = format_llm_tool_selection_reply(
@@ -96,13 +104,13 @@ def test_knowledge_template_reply_includes_source():
 
 def test_search_knowledge_finds_database_article():
     insert_knowledge_article(
-        "fresh damaged compensation",
-        "fresh damaged goods can request compensation within 24 hours",
-        "fresh,compensation",
+        "生鲜破损赔付规则",
+        "如果用户收到生鲜商品后发现破损，可以在签收后 24 小时内提交照片申请赔付。",
+        "生鲜,赔付",
     )
 
-    result = search_knowledge("fresh damaged compensation")
+    result = search_knowledge("生鲜破损怎么赔付")
 
     assert result["found"] is True
     assert "knowledge_articles:" in result["sources"][0]
-    assert any("fresh damaged compensation" in match["content"] for match in result["matches"])
+    assert any("生鲜破损赔付规则" in match["content"] for match in result["matches"])

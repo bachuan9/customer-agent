@@ -45,6 +45,7 @@ const knowledgePermissionHint = document.getElementById("knowledgePermissionHint
 const ragDebugQueryInput = document.getElementById("ragDebugQuery");
 const ragDebugBtn = document.getElementById("ragDebugBtn");
 const ragDebugResult = document.getElementById("ragDebugResult");
+const ragDebugExamples = document.getElementById("ragDebugExamples");
 const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
@@ -54,6 +55,12 @@ const RAG_GROUP_LABELS = {
   return: "退货售后",
   membership: "会员权益",
 };
+const RAG_DEBUG_EXAMPLES = [
+  { label: "物流超时", query: "物流超过48小时没更新怎么办" },
+  { label: "退货运费", query: "退货运费谁承担" },
+  { label: "会员积分", query: "会员积分退款后会扣回吗" },
+  { label: "未命中示例", query: "平台支持虚拟币提现吗" },
+];
 let currentUser = null;
 
 // 2. 基础工具函数：滚动、转义 HTML、更新状态栏。
@@ -82,6 +89,16 @@ function renderRagGroupTags(groups = []) {
       return `<span class="rag-group-tag rag-group-${escapeHtml(group)}">${escapeHtml(label)}</span>`;
     })
     .join("");
+}
+
+function renderRagDebugExamples() {
+  ragDebugExamples.innerHTML = RAG_DEBUG_EXAMPLES.map(
+    (example) => `
+      <button class="rag-example-btn" type="button" data-query="${escapeHtml(example.query)}">
+        ${escapeHtml(example.label)}
+      </button>
+    `
+  ).join("");
 }
 
 function setStatus(text) {
@@ -1624,6 +1641,14 @@ ragDebugQueryInput.addEventListener("keydown", (event) => {
   }
 });
 
+ragDebugExamples.addEventListener("click", (event) => {
+  const exampleButton = event.target.closest(".rag-example-btn");
+  if (!exampleButton) return;
+
+  ragDebugQueryInput.value = exampleButton.dataset.query;
+  runRagDebug();
+});
+
 knowledgeForm.addEventListener("submit", saveKnowledgeArticle);
 
 cancelKnowledgeEditBtn.addEventListener("click", () => {
@@ -1646,4 +1671,5 @@ knowledgeList.addEventListener("click", (event) => {
 
 loadComplaintStats();
 loadKnowledgeArticles();
+renderRagDebugExamples();
 loadCurrentUser();

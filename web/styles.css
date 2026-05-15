@@ -738,6 +738,30 @@ button:disabled {
   gap: 10px;
 }
 
+.rag-debug-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rag-example-btn {
+  border: 1px solid rgba(19, 32, 51, 0.12);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.rag-example-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(240, 180, 41, 0.55);
+  background: #fff6db;
+}
+
 .rag-debug-summary,
 .rag-debug-meta {
   display: flex;
