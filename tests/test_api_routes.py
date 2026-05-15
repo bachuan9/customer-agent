@@ -60,12 +60,131 @@ def test_chat_endpoint_handles_logistics_issue_with_policy_when_llm_disabled():
         settings.llm_enabled = original_llm_enabled
 
     reply = response.json()["reply"]
+    steps = response.json()["steps"]
     assert response.status_code == 200
+    assert "已同时查询物流状态和平台政策" in reply
     assert "物流 L101" in reply
     assert "当前状态" in reply
     assert "物流异常处理规则" in reply
     assert "建议您" in reply
     assert "参考来源" in reply
+    assert "创建投诉" in reply
+    assert "客服主管" in reply
+    assert "识别意图：logistics_issue" in steps
+    assert "调用工具：query_logistics" in steps
+    assert "调用工具：search_knowledge" in steps
+    assert "保存待确认动作：waiting_confirm" in steps
+
+
+def test_chat_endpoint_logistics_issue_keeps_waiting_confirm_when_llm_enabled():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-api-logistics-issue-llm-enabled",
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    steps = response.json()["steps"]
+    assert response.status_code == 200
+    assert "识别意图：logistics_issue" in steps
+    assert "调用工具：query_logistics" in steps
+    assert "调用工具：search_knowledge" in steps
+    assert "保存待确认动作：waiting_confirm" in steps
+
+
+def test_chat_endpoint_confirms_logistics_issue_complaint_when_llm_disabled():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        issue_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-confirm-logistics-complaint",
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-confirm-logistics-complaint",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        list_response = client.get("/complaints")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert issue_response.status_code == 200
+    assert "确认创建投诉" in issue_response.json()["reply"]
+    assert confirm_response.status_code == 200
+    assert "已为用户创建投诉，编号 C-" in confirm_response.json()["reply"]
+    assert "识别意图：confirm_create_complaint" in confirm_response.json()["steps"]
+    assert "读取会话记忆：waiting_confirm" in confirm_response.json()["steps"]
+    assert "整理投诉内容" in confirm_response.json()["steps"]
+    assert "调用工具：create_complaint" in confirm_response.json()["steps"]
+    assert "清空待确认动作" in confirm_response.json()["steps"]
+    complaints = list_response.json()
+    assert any(
+        item["user_id"] == "pytest-confirm-logistics-complaint"
+        and "物流号:L101" in item["content"]
+        and "订单号:A101" in item["content"]
+        for item in complaints
+    )
+
+
+def test_chat_endpoint_cancels_pending_complaint_when_llm_disabled():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        issue_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-cancel-logistics-complaint",
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        cancel_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-cancel-logistics-complaint",
+                "message": "取消创建投诉",
+                "role": "agent",
+            },
+        )
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-cancel-logistics-complaint",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert issue_response.status_code == 200
+    assert "确认创建投诉" in issue_response.json()["reply"]
+    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert cancel_response.status_code == 200
+    assert "已取消创建投诉" in cancel_response.json()["reply"]
+    assert "识别意图：cancel_create_complaint" in cancel_response.json()["steps"]
+    assert "读取会话记忆：waiting_confirm" in cancel_response.json()["steps"]
+    assert "清空待确认动作" in cancel_response.json()["steps"]
+    assert confirm_response.status_code == 200
+    assert "当前没有待确认创建的投诉" in confirm_response.json()["reply"]
 
 
 def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
@@ -86,11 +205,14 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
 
     reply = response.json()["reply"]
     assert response.status_code == 200
+    assert "已同时查询订单状态和平台发货政策" in reply
     assert "订单 A101" in reply
     assert "当前状态" in reply
     assert "发货时效规则" in reply
     assert "建议您" in reply
     assert "参考来源" in reply
+    assert "创建投诉" in reply
+    assert "客服主管" in reply
 
 
 def test_order_detail_endpoint_returns_order_status():

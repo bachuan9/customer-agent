@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import BaseModel
 
 
@@ -14,6 +16,7 @@ class AuthenticatedChatRequest(ChatRequest):
 
 class ChatResponse(BaseModel):
     reply: str
+    steps: List[str] = []
 
 
 class LoginRequest(BaseModel):

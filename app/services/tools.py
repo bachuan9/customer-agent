@@ -81,10 +81,15 @@ def query_order(order_no: str) -> Dict[str, Any]:
 
 
 def query_logistics(tracking_no: str) -> Dict[str, Any]:
-    status = get_logistics_status(tracking_no)
-    if status is None:
+    logistics = get_logistics_by_tracking_no(tracking_no)
+    if logistics is None:
         return {"found": False, "tracking_no": tracking_no, "status": None}
-    return {"found": True, "tracking_no": tracking_no, "status": status}
+    return {
+        "found": True,
+        "tracking_no": tracking_no,
+        "order_no": logistics["order_no"],
+        "status": logistics["status"],
+    }
 
 
 def get_knowledge_dir_path() -> str:

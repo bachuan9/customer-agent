@@ -295,6 +295,25 @@ function setBubbleHtml(bubble, html) {
   }
 }
 
+function renderAgentSteps(steps = []) {
+  if (!steps.length) return "";
+
+  const items = steps
+    .map((step, index) => `<li><span>${index + 1}</span>${escapeHtml(step)}</li>`)
+    .join("");
+  return `
+    <div class="agent-steps">
+      <strong>Agent 执行步骤</strong>
+      <ol>${items}</ol>
+    </div>
+  `;
+}
+
+function setBubbleReplyWithSteps(bubble, reply, steps = []) {
+  const safeReply = escapeHtml(reply || "（无回复）");
+  setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}`);
+}
+
 // 4. 表格渲染：把订单、物流、投诉列表渲染成 HTML 表格。
 function renderTable(columns, rows) {
   const head = columns
@@ -666,7 +685,7 @@ async function sendMessage(message) {
     }
 
     const data = await res.json();
-    setBubbleText(typingBubble, data.reply || "（无回复）");
+    setBubbleReplyWithSteps(typingBubble, data.reply, data.steps || []);
     typingBubble.classList.remove("typing");
     await loadComplaintStats();
   } catch (err) {

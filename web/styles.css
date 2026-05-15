@@ -546,6 +546,51 @@ button:disabled {
   font-style: italic;
 }
 
+.agent-steps {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f7f9fc;
+  border: 1px dashed rgba(19, 32, 51, 0.16);
+  color: var(--muted);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.agent-steps strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--navy);
+}
+
+.agent-steps ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.agent-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.agent-steps li span {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .chat-footer {
   padding: 18px 20px 20px;
   border-top: 1px solid var(--line);

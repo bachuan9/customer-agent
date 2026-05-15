@@ -96,6 +96,18 @@ ORDER_ISSUE_KEYWORDS = {
 }
 
 
+ESCALATION_SUGGESTION_KEYWORDS = {
+    "48小时",
+    "48 小时",
+    "超时",
+    "没发货",
+    "未发货",
+    "没更新",
+    "未更新",
+    "延迟",
+}
+
+
 ROLE_LABELS = {
     "agent": "普通客服",
     "manager": "主管",
@@ -186,6 +198,10 @@ def is_order_issue(message):
     return bool(extract_id(message, "A")) and any(keyword in message for keyword in ORDER_ISSUE_KEYWORDS)
 
 
+def should_suggest_complaint(message):
+    return any(keyword in message for keyword in ESCALATION_SUGGESTION_KEYWORDS)
+
+
 # 4. 意图识别：判断用户这句话想做什么。
 def detect_intent(message):
     # 先判断更具体的意图，避免“更新订单”被误判成普通“查订单”
@@ -195,6 +211,10 @@ def detect_intent(message):
         return "confirm_update_order"
     if "确认更新物流" in message:
         return "confirm_update_logistics"
+    if "确认创建投诉" in message:
+        return "confirm_create_complaint"
+    if "取消创建投诉" in message:
+        return "cancel_create_complaint"
     if "查看备注" in message:
         return "list_complaint_notes"
     if "查看投诉" in message and extract_complaint_id(message):
@@ -400,8 +420,8 @@ def format_llm_tool_selection_reply(selection):
     return "工具已执行完成。"
 
 
-def format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result):
-    lines = []
+def format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result, suggest_complaint=False):
+    lines = ["已同时查询物流状态和平台政策。"]
 
     if logistics_result.get("error"):
         lines.append(format_tool_error(logistics_result))
@@ -418,12 +438,14 @@ def format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result
         suggestion="建议您先安抚用户，并联系仓库或承运商核实发货/更新情况；如果确认超时，可继续为用户创建投诉或升级处理。",
         fallback="暂未在知识库中找到对应的物流异常规则，建议先联系仓库或承运商进一步核实。",
     )
+    if suggest_complaint:
+        lines.append("如果用户希望继续处理，可以回复“确认创建投诉”，为用户创建投诉并升级给客服主管跟进。")
 
     return "\n".join(lines)
 
 
-def format_order_issue_reply(order_no, order_result, knowledge_result):
-    lines = []
+def format_order_issue_reply(order_no, order_result, knowledge_result, suggest_complaint=False):
+    lines = ["已同时查询订单状态和平台发货政策。"]
 
     if order_result.get("error"):
         lines.append(format_tool_error(order_result))
@@ -440,6 +462,8 @@ def format_order_issue_reply(order_no, order_result, knowledge_result):
         suggestion="建议您先安抚用户，并核实订单是否属于预售、定制、大促或仓库延迟场景；如果确认超时，可继续为用户创建投诉或升级处理。",
         fallback="暂未在知识库中找到对应的发货规则，建议先联系仓库进一步核实。",
     )
+    if suggest_complaint:
+        lines.append("如果用户希望继续处理，可以回复“确认创建投诉”，为用户创建投诉并升级给客服主管跟进。")
 
     return "\n".join(lines)
 
@@ -708,10 +732,98 @@ def handle_confirm_llm_action(user_id, role="agent"):
     return format_llm_tool_selection_reply(selection)
 
 
+def build_issue_complaint_content(pending):
+    issue_type = pending.get("issue_type")
+    order_id = pending.get("order_id")
+    tracking_no = pending.get("tracking_no")
+    reason = pending.get("reason") or "用户反馈订单/物流异常"
+
+    parts = []
+    if order_id:
+        parts.append(f"订单号:{order_id}")
+    if tracking_no:
+        parts.append(f"物流号:{tracking_no}")
+    if issue_type:
+        parts.append(f"类型:{issue_type}")
+    parts.append(f"原因:{reason}")
+    return " ".join(parts)
+
+
+def handle_confirm_create_complaint(user_id, pending_existing):
+    if not pending_existing or pending_existing.get("type") != "pending_complaint":
+        return "当前没有待确认创建的投诉，请先描述订单或物流异常。"
+
+    content = build_issue_complaint_content(pending_existing)
+    complaint_id = create_complaint(user_id, content)
+    MEMORY.clear(user_id)
+    return f"已为用户创建投诉，编号 {complaint_id}"
+
+
+def handle_cancel_create_complaint(user_id, pending_existing):
+    if not pending_existing or pending_existing.get("type") != "pending_complaint":
+        return "当前没有待取消的投诉创建流程。"
+
+    MEMORY.clear(user_id)
+    return "已取消创建投诉。"
+
+
+def build_agent_steps(intent, pending_existing=None, pending_after=None, selection=None):
+    steps = [f"识别意图：{intent}"]
+
+    if intent == "confirm_create_complaint":
+        if pending_existing:
+            steps.append(f"读取会话记忆：{pending_existing.get('status', pending_existing.get('type'))}")
+        else:
+            steps.append("读取会话记忆：无待确认投诉")
+        steps.extend(["整理投诉内容", "调用工具：create_complaint", "清空待确认动作"])
+        return steps
+
+    if intent == "cancel_create_complaint":
+        if pending_existing:
+            steps.append(f"读取会话记忆：{pending_existing.get('status', pending_existing.get('type'))}")
+        else:
+            steps.append("读取会话记忆：无待取消投诉")
+        steps.append("清空待确认动作")
+        return steps
+
+    tool_steps = {
+        "order_issue": ["调用工具：query_order", "调用工具：search_knowledge"],
+        "logistics_issue": ["调用工具：query_logistics", "调用工具：search_knowledge"],
+        "query_order": ["调用工具：query_order"],
+        "query_logistics": ["调用工具：query_logistics"],
+        "search_knowledge": ["调用工具：search_knowledge"],
+        "create_complaint": ["调用工具：create_complaint"],
+        "confirm_llm_action": ["读取待确认 LLM 动作"],
+        "confirm_update_order": ["读取待确认订单更新", "调用工具：update_order"],
+        "confirm_update_logistics": ["读取待确认物流更新", "调用工具：update_logistics"],
+    }
+    steps.extend(tool_steps.get(intent, []))
+
+    if selection:
+        steps.append(f"LLM 选择工具：{selection['tool_name']}")
+        if selection.get("requires_confirmation"):
+            steps.append("保存待确认动作：pending_llm_action")
+
+    if intent in {"order_issue", "logistics_issue"}:
+        steps.append("判断是否需要建议创建投诉")
+        if pending_after and pending_after.get("status") == "waiting_confirm":
+            steps.append("保存待确认动作：waiting_confirm")
+    if pending_existing:
+        steps.append(f"读取会话记忆：{pending_existing.get('status', pending_existing.get('type'))}")
+
+    return steps
+
+
 # 9. 主意图分发：根据识别出的 intent 进入对应处理分支。
 def handle_intent(message, user_id, intent, pending_existing):
     if intent == "confirm_llm_action":
         return handle_confirm_llm_action(user_id)
+
+    if intent == "confirm_create_complaint":
+        return handle_confirm_create_complaint(user_id, pending_existing)
+
+    if intent == "cancel_create_complaint":
+        return handle_cancel_create_complaint(user_id, pending_existing)
 
     if intent in {"confirm_update_order", "confirm_update_logistics"}:
         pending_update = get_pending_update(user_id)
@@ -731,13 +843,46 @@ def handle_intent(message, user_id, intent, pending_existing):
         order_no = extract_id(message, "A")
         order_result = call_tool("query_order", {"order_no": order_no})
         knowledge_result = call_tool("search_knowledge", {"query": message})
-        return format_order_issue_reply(order_no, order_result, knowledge_result)
+        if should_suggest_complaint(message):
+            set_pending_complaint(
+                user_id,
+                {
+                    "type": "pending_complaint",
+                    "status": "waiting_confirm",
+                    "issue_type": "订单异常",
+                    "order_id": order_no,
+                    "reason": message,
+                },
+            )
+        return format_order_issue_reply(
+            order_no,
+            order_result,
+            knowledge_result,
+            suggest_complaint=should_suggest_complaint(message),
+        )
 
     if intent == "logistics_issue":
         tracking_no = extract_id(message, "L")
         logistics_result = call_tool("query_logistics", {"tracking_no": tracking_no})
         knowledge_result = call_tool("search_knowledge", {"query": message})
-        return format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result)
+        if should_suggest_complaint(message):
+            set_pending_complaint(
+                user_id,
+                {
+                    "type": "pending_complaint",
+                    "status": "waiting_confirm",
+                    "issue_type": "物流异常",
+                    "order_id": logistics_result.get("order_no"),
+                    "tracking_no": tracking_no,
+                    "reason": message,
+                },
+            )
+        return format_logistics_issue_reply(
+            tracking_no,
+            logistics_result,
+            knowledge_result,
+            suggest_complaint=should_suggest_complaint(message),
+        )
 
     if intent == "search_knowledge":
         result = call_tool("search_knowledge", {"query": message})
@@ -847,6 +992,9 @@ def handle_intent(message, user_id, intent, pending_existing):
             return f"投诉解决失败：{exc}"
         return format_complaint_update_reply(result)
 
+    if pending_existing and pending_existing.get("status") == "waiting_confirm":
+        return "已准备好投诉内容。如需创建投诉，请回复：确认创建投诉。"
+
     if intent == "create_complaint" or pending_existing:
         order_id = extract_id(message, "A")
         pending = pending_existing or {"type": "pending_complaint"}
@@ -955,6 +1103,18 @@ def run_agent(req):
     if intent == "confirm_llm_action":
         return handle_confirm_llm_action(user_id, role)
 
+    if intent == "confirm_create_complaint":
+        pending_existing = get_pending_complaint(user_id)
+        return handle_confirm_create_complaint(user_id, pending_existing)
+
+    if intent == "cancel_create_complaint":
+        pending_existing = get_pending_complaint(user_id)
+        return handle_cancel_create_complaint(user_id, pending_existing)
+
+    if intent in {"order_issue", "logistics_issue"}:
+        pending_existing = get_pending_complaint(user_id)
+        return handle_intent(message, user_id, intent, pending_existing)
+
     # 如果开启 LLM，就先让大模型选择工具；失败时退回下面的规则 Agent。
     if settings.llm_enabled:
         try:
@@ -993,3 +1153,15 @@ def run_agent(req):
     print(f"[DEBUG] pending_existing={pending_existing}")
 
     return handle_intent(message, user_id, intent, pending_existing)
+
+
+def run_agent_with_steps(req):
+    message = req.message
+    user_id = req.user_id
+    intent = detect_intent(message)
+    pending_before = get_pending_complaint(user_id)
+
+    reply = run_agent(req)
+    pending_after = get_pending_complaint(user_id)
+    steps = build_agent_steps(intent, pending_existing=pending_before, pending_after=pending_after)
+    return {"reply": reply, "steps": steps}

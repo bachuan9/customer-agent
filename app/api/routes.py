@@ -22,7 +22,7 @@ from app.models.schemas import (
     UserPasswordResetRequest,
     UserRoleUpdateRequest,
 )
-from app.services.agent import list_complaints, run_agent
+from app.services.agent import list_complaints, run_agent_with_steps
 from app.services.tool_registry import list_function_calling_tools
 from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
@@ -365,8 +365,8 @@ def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatRes
             message=req.message,
         )
 
-    reply = run_agent(req)
-    return ChatResponse(reply=reply)
+    result = run_agent_with_steps(req)
+    return ChatResponse(reply=result["reply"], steps=result["steps"])
 
 
 # 4. 投诉列表接口：支持按 user_id、status、priority、handler 筛选投诉。
