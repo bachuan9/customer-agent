@@ -711,6 +711,70 @@ button:disabled {
   padding-bottom: 14px;
 }
 
+.rag-debug-panel {
+  display: grid;
+  gap: 12px;
+  margin: 18px 20px 0;
+  padding: 16px;
+  border: 1px solid rgba(240, 180, 41, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(240, 180, 41, 0.16), transparent 34%),
+    linear-gradient(180deg, #fffaf0, #ffffff);
+}
+
+.rag-debug-panel h3 {
+  margin: 4px 0;
+  color: var(--navy);
+}
+
+.rag-debug-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.rag-debug-result {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-debug-summary,
+.rag-debug-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.rag-debug-summary span,
+.rag-debug-meta span,
+.rag-debug-keywords {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(19, 32, 51, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rag-debug-item {
+  padding: 12px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.rag-debug-item pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: #132033;
+  color: #fff7df;
+  white-space: pre-wrap;
+  font: 12px/1.6 "Cascadia Code", "Consolas", monospace;
+}
+
 .knowledge-list {
   display: grid;
   gap: 12px;

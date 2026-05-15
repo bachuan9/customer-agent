@@ -2,6 +2,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+MIN_KNOWLEDGE_SCORE = 3
+
 from app.storage.db import (
     ALLOWED_COMPLAINT_PRIORITIES,
     ALLOWED_LOGISTICS_STATUSES,
@@ -126,6 +128,16 @@ def score_knowledge_section(query: str, section: str) -> int:
     return score
 
 
+def get_matched_knowledge_keywords(query: str, section: str) -> List[str]:
+    section_lower = section.lower().replace(" ", "")
+    matched = []
+    for keyword in extract_knowledge_keywords(query):
+        normalized_keyword = keyword.lower().replace(" ", "")
+        if normalized_keyword in section_lower:
+            matched.append(keyword)
+    return matched
+
+
 def search_knowledge(query: str) -> Dict[str, Any]:
     knowledge_files = list_knowledge_files()
     db_articles = fetch_knowledge_articles(include_disabled=False)
@@ -140,19 +152,37 @@ def search_knowledge(query: str) -> Dict[str, Any]:
         source = format_knowledge_source(knowledge_path)
         for section in split_knowledge_sections(content):
             score = score_knowledge_section(query, section)
-            if score > 0:
-                scored_sections.append({"score": score, "content": section, "source": source})
+            if score >= MIN_KNOWLEDGE_SCORE:
+                scored_sections.append({
+                    "score": score,
+                    "matched_keywords": get_matched_knowledge_keywords(query, section),
+                    "content": section,
+                    "source": source,
+                })
 
     for article in db_articles:
         article_text = f"{article['title']}\n{article['content']}"
         score = score_knowledge_section(query, article_text)
-        if score > 0:
+        if score >= MIN_KNOWLEDGE_SCORE:
             source = f"knowledge_articles:{article['id']}"
-            scored_sections.append({"score": score, "content": article_text, "source": source})
+            scored_sections.append({
+                "score": score,
+                "matched_keywords": get_matched_knowledge_keywords(query, article_text),
+                "content": article_text,
+                "source": source,
+            })
 
     scored_sections.sort(key=lambda item: item["score"], reverse=True)
     top_sections = scored_sections[:3]
-    matches = [{"content": item["content"], "source": item["source"]} for item in top_sections]
+    matches = [
+        {
+            "content": item["content"],
+            "source": item["source"],
+            "score": item["score"],
+            "matched_keywords": item["matched_keywords"],
+        }
+        for item in top_sections
+    ]
     sources = []
     for item in matches:
         if item["source"] not in sources:

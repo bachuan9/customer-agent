@@ -267,6 +267,22 @@
               </div>
             </div>
 
+            <div class="rag-debug-panel">
+              <div>
+                <span class="eyebrow">RAG Debug</span>
+                <h3>RAG 检索调试</h3>
+                <p>输入用户问题，查看知识库命中来源、分数和关键词。</p>
+              </div>
+              <label class="field">
+                <span>调试问题</span>
+                <input id="ragDebugQuery" type="text" placeholder="例如：48 物流" />
+              </label>
+              <button id="ragDebugBtn" class="ghost" type="button">测试检索</button>
+              <div id="ragDebugResult" class="rag-debug-result">
+                <p class="empty-state">还没有调试结果。</p>
+              </div>
+            </div>
+
             <div id="knowledgeList" class="knowledge-list">
               <p class="empty-state">知识库加载中...</p>
             </div>

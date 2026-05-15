@@ -62,7 +62,7 @@ from app.storage.db import (
     update_user_active,
     update_user_role,
 )
-from app.services.tools import get_complaint_detail
+from app.services.tools import get_complaint_detail, search_knowledge
 
 router = APIRouter()
 
@@ -539,6 +539,11 @@ def delete_note(note_id: str) -> dict:
 @router.get("/knowledge")
 def knowledge_articles(include_disabled: bool = True, query: str = None, tag: str = None) -> list:
     return fetch_knowledge_articles(include_disabled=include_disabled, query_text=query, tag=tag)
+
+
+@router.get("/knowledge/search-debug")
+def knowledge_search_debug(query: str) -> dict:
+    return search_knowledge(query)
 
 
 @router.get("/knowledge/{article_id}")

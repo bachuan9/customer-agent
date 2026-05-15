@@ -42,6 +42,9 @@ const knowledgeTagFilterInput = document.getElementById("knowledgeTagFilter");
 const searchKnowledgeBtn = document.getElementById("searchKnowledgeBtn");
 const resetKnowledgeFilterBtn = document.getElementById("resetKnowledgeFilterBtn");
 const knowledgePermissionHint = document.getElementById("knowledgePermissionHint");
+const ragDebugQueryInput = document.getElementById("ragDebugQuery");
+const ragDebugBtn = document.getElementById("ragDebugBtn");
+const ragDebugResult = document.getElementById("ragDebugResult");
 const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
@@ -443,6 +446,61 @@ async function loadKnowledgeArticles(showBubble = false) {
     renderKnowledgeList(items);
   } catch (err) {
     knowledgeList.innerHTML = '<p class="empty-state">知识库加载失败，请确认后端正在运行。</p>';
+  }
+}
+
+function renderRagDebugResult(result) {
+  if (!result.found) {
+    ragDebugResult.innerHTML = `
+      <p class="empty-state">未命中可靠知识。可以换一个更接近政策内容的问题再试。</p>
+    `;
+    return;
+  }
+
+  ragDebugResult.innerHTML = `
+    <div class="rag-debug-summary">
+      <strong>命中 ${result.matches.length} 条知识</strong>
+      <span>来源：${escapeHtml((result.sources || []).join(", ") || "无")}</span>
+    </div>
+    ${result.matches
+      .map(
+        (match) => `
+          <article class="rag-debug-item">
+            <div class="rag-debug-meta">
+              <span>score: ${match.score}</span>
+              <span>source: ${escapeHtml(match.source || "无")}</span>
+            </div>
+            <p class="rag-debug-keywords">关键词：${escapeHtml((match.matched_keywords || []).join(", ") || "无")}</p>
+            <pre>${escapeHtml(match.content || "")}</pre>
+          </article>
+        `
+      )
+      .join("")}
+  `;
+}
+
+async function runRagDebug() {
+  const query = ragDebugQueryInput.value.trim();
+  if (!query) {
+    ragDebugResult.innerHTML = '<p class="empty-state">请先输入一个要调试的问题。</p>';
+    return;
+  }
+
+  ragDebugBtn.disabled = true;
+  ragDebugResult.innerHTML = '<p class="empty-state">正在检索知识库...</p>';
+
+  try {
+    const params = new URLSearchParams({ query });
+    const res = await fetch(`${API_BASE}/knowledge/search-debug?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const result = await res.json();
+    renderRagDebugResult(result);
+  } catch (err) {
+    ragDebugResult.innerHTML = '<p class="empty-state">RAG 调试失败，请确认后端服务正在运行。</p>';
+  } finally {
+    ragDebugBtn.disabled = false;
   }
 }
 
@@ -1532,6 +1590,15 @@ resetKnowledgeFilterBtn.addEventListener("click", async () => {
   knowledgeSearchInput.value = "";
   knowledgeTagFilterInput.value = "";
   await loadKnowledgeArticles(true);
+});
+
+ragDebugBtn.addEventListener("click", runRagDebug);
+
+ragDebugQueryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runRagDebug();
+  }
 });
 
 knowledgeForm.addEventListener("submit", saveKnowledgeArticle);

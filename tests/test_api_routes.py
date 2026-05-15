@@ -404,6 +404,28 @@ def test_knowledge_article_list_supports_query_and_tag_filters():
     assert items[0]["title"] == "生鲜破损赔付规则"
 
 
+def test_knowledge_search_debug_returns_rag_explanations():
+    response = client.get("/knowledge/search-debug?query=48%20%E7%89%A9%E6%B5%81")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["found"] is True
+    assert body["query"] == "48 \u7269\u6d41"
+    assert body["matches"]
+    assert body["matches"][0]["score"] >= 3
+    assert isinstance(body["matches"][0]["matched_keywords"], list)
+
+
+def test_knowledge_search_debug_returns_empty_for_unrelated_query():
+    response = client.get("/knowledge/search-debug?query=x")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["found"] is False
+    assert body["matches"] == []
+    assert body["sources"] == []
+
+
 def test_knowledge_write_requires_login():
     response = client.post(
         "/knowledge",
