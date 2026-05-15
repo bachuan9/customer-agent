@@ -68,6 +68,7 @@ def test_search_knowledge_returns_match_explanations():
     first_match = result["matches"][0]
     assert first_match["score"] >= 3
     assert isinstance(first_match["matched_keywords"], list)
+    assert "shipping" in first_match["matched_groups"]
     assert "content" in first_match
     assert "source" in first_match
 

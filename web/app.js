@@ -470,6 +470,7 @@ function renderRagDebugResult(result) {
               <span>score: ${match.score}</span>
               <span>source: ${escapeHtml(match.source || "无")}</span>
             </div>
+            <p class="rag-debug-keywords">分类：${escapeHtml((match.matched_groups || []).join(", ") || "无")}</p>
             <p class="rag-debug-keywords">关键词：${escapeHtml((match.matched_keywords || []).join(", ") || "无")}</p>
             <pre>${escapeHtml(match.content || "")}</pre>
           </article>

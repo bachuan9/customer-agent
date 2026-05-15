@@ -149,6 +149,19 @@ def get_matched_knowledge_keywords(query: str, section: str) -> List[str]:
     return matched
 
 
+def get_matched_knowledge_groups(query: str, section: str) -> List[str]:
+    section_lower = section.lower().replace(" ", "")
+    normalized_query = query.lower().replace(" ", "")
+    matched_groups = []
+    for group_name, group_keywords in KNOWLEDGE_KEYWORD_GROUPS.items():
+        for keyword in group_keywords:
+            normalized_keyword = keyword.lower().replace(" ", "")
+            if normalized_keyword in normalized_query and normalized_keyword in section_lower:
+                matched_groups.append(group_name)
+                break
+    return matched_groups
+
+
 def search_knowledge(query: str) -> Dict[str, Any]:
     knowledge_files = list_knowledge_files()
     db_articles = fetch_knowledge_articles(include_disabled=False)
@@ -167,6 +180,7 @@ def search_knowledge(query: str) -> Dict[str, Any]:
                 scored_sections.append({
                     "score": score,
                     "matched_keywords": get_matched_knowledge_keywords(query, section),
+                    "matched_groups": get_matched_knowledge_groups(query, section),
                     "content": section,
                     "source": source,
                 })
@@ -179,6 +193,7 @@ def search_knowledge(query: str) -> Dict[str, Any]:
             scored_sections.append({
                 "score": score,
                 "matched_keywords": get_matched_knowledge_keywords(query, article_text),
+                "matched_groups": get_matched_knowledge_groups(query, article_text),
                 "content": article_text,
                 "source": source,
             })
@@ -191,6 +206,7 @@ def search_knowledge(query: str) -> Dict[str, Any]:
             "source": item["source"],
             "score": item["score"],
             "matched_keywords": item["matched_keywords"],
+            "matched_groups": item["matched_groups"],
         }
         for item in top_sections
     ]
