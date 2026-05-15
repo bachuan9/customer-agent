@@ -49,6 +49,11 @@ const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
 const AUTH_TOKEN_KEY = "customerAgentAuthToken";
+const RAG_GROUP_LABELS = {
+  shipping: "物流配送",
+  return: "退货售后",
+  membership: "会员权益",
+};
 let currentUser = null;
 
 // 2. 基础工具函数：滚动、转义 HTML、更新状态栏。
@@ -60,6 +65,23 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function formatRagGroupLabels(groups = []) {
+  return groups.map((group) => RAG_GROUP_LABELS[group] || group);
+}
+
+function renderRagGroupTags(groups = []) {
+  if (!groups.length) {
+    return '<span class="rag-group-tag">无</span>';
+  }
+
+  return groups
+    .map((group) => {
+      const label = RAG_GROUP_LABELS[group] || group;
+      return `<span class="rag-group-tag rag-group-${escapeHtml(group)}">${escapeHtml(label)}</span>`;
+    })
+    .join("");
 }
 
 function setStatus(text) {
@@ -470,7 +492,7 @@ function renderRagDebugResult(result) {
               <span>score: ${match.score}</span>
               <span>source: ${escapeHtml(match.source || "无")}</span>
             </div>
-            <p class="rag-debug-keywords">分类：${escapeHtml((match.matched_groups || []).join(", ") || "无")}</p>
+            <div class="rag-group-tags">分类：${renderRagGroupTags(match.matched_groups || [])}</div>
             <p class="rag-debug-keywords">关键词：${escapeHtml((match.matched_keywords || []).join(", ") || "无")}</p>
             <pre>${escapeHtml(match.content || "")}</pre>
           </article>
