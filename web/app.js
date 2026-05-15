@@ -19,6 +19,7 @@ const logisticsBtn = document.getElementById("logisticsBtn");
 const knowledgeBtn = document.getElementById("knowledgeBtn");
 const toolLogsBtn = document.getElementById("toolLogsBtn");
 const usersBtn = document.getElementById("usersBtn");
+const auditLogsBtn = document.getElementById("auditLogsBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
 const statsPending = document.getElementById("statsPending");
@@ -844,6 +845,246 @@ function bindToolLogFilter(container) {
   });
 }
 
+function getAuditActionLabel(action) {
+  const labels = {
+    "auth.login_success": "登录成功",
+    "auth.login_failed": "登录失败",
+    "auth.logout": "退出登录",
+    "auth.logout_failed": "退出失败",
+    "user.create": "新增用户",
+    "user.update_role": "修改角色",
+    "user.update_active": "启用/禁用用户",
+    "user.reset_password": "重置密码",
+    "knowledge.create": "新增知识",
+    "knowledge.update": "修改知识",
+    "knowledge.delete": "删除知识",
+  };
+  return labels[action] || action;
+}
+
+function renderAuditLogStats(stats) {
+  const actionText = stats.actions?.length
+    ? stats.actions.map((item) => `${getAuditActionLabel(item.action)}：${item.count}`).join(" / ")
+    : "暂无操作统计";
+
+  return `
+    <div class="log-summary">
+      <strong>操作审计摘要</strong>
+      <p>总记录 ${stats.total} 条，成功 ${stats.success} 条，失败 ${stats.failed} 条。</p>
+      <p>操作分布：${escapeHtml(actionText)}</p>
+    </div>
+  `;
+}
+
+function renderAuditLogTable(logs) {
+  return renderTable(
+    [
+      { key: "id", label: "ID" },
+      { key: "actor_username", label: "操作者" },
+      {
+        key: "action",
+        label: "动作",
+        render: (value) => getAuditActionLabel(value),
+      },
+      { key: "target_type", label: "对象类型" },
+      { key: "target_id", label: "对象" },
+      {
+        key: "success",
+        label: "结果",
+        render: (value) => (value ? "成功" : "失败"),
+      },
+      {
+        key: "detail",
+        label: "详情",
+        render: (value) => escapeHtml(JSON.stringify(value)),
+      },
+      { key: "created_at", label: "时间" },
+      {
+        key: "id",
+        label: "操作",
+        render: (value) => `<button class="link-button audit-log-detail-btn" data-audit-log-id="${escapeHtml(String(value))}" type="button">查看详情</button>`,
+      },
+    ],
+    logs
+  );
+}
+
+function renderAuditLogDetail(log) {
+  return `
+    <div class="audit-log-detail">
+      <strong>审计日志详情 #${escapeHtml(String(log.id))}</strong>
+      <p>操作者：${escapeHtml(log.actor_username || "未知")}（${escapeHtml(log.actor_role || "未知角色")}）</p>
+      <p>动作：${escapeHtml(getAuditActionLabel(log.action))}</p>
+      <p>对象：${escapeHtml(log.target_type || "无")} / ${escapeHtml(log.target_id || "无")}</p>
+      <p>结果：${log.success ? "成功" : "失败"}</p>
+      <p>时间：${escapeHtml(log.created_at)}</p>
+      <div class="tool-log-detail-actions">
+        <button class="ghost copy-audit-log-json-btn" data-copy-kind="detail" type="button">复制 detail JSON</button>
+      </div>
+      <label>detail</label>
+      <pre>${escapeHtml(JSON.stringify(log.detail, null, 2))}</pre>
+    </div>
+  `;
+}
+
+function bindAuditLogDetailButtons(container, logs) {
+  container.querySelectorAll(".audit-log-detail-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const logId = Number(button.dataset.auditLogId);
+      const log = logs.find((item) => item.id === logId);
+      if (!log) {
+        appendBubble("agent", "没有找到这条审计日志详情。");
+        return;
+      }
+
+      const detailBubble = appendHtmlBubble(renderAuditLogDetail(log));
+      const copyButton = detailBubble.querySelector(".copy-audit-log-json-btn");
+      if (copyButton) {
+        copyButton.addEventListener("click", async () => {
+          try {
+            await copyTextToClipboard(JSON.stringify(log.detail, null, 2));
+            appendBubble("agent", "审计日志 detail JSON 已复制到剪贴板。");
+          } catch (err) {
+            appendBubble("agent", "审计日志 detail JSON 复制失败，请手动选择文本复制。");
+          }
+        });
+      }
+    });
+  });
+}
+
+function buildAuditLogFilterHtml() {
+  return `
+    <div class="log-filters">
+      <label>
+        <span>动作</span>
+        <select id="auditActionFilter">
+          <option value="">全部动作</option>
+          <option value="auth.login_success">登录成功</option>
+          <option value="auth.login_failed">登录失败</option>
+          <option value="auth.logout">退出登录</option>
+          <option value="user.create">新增用户</option>
+          <option value="user.update_role">修改角色</option>
+          <option value="user.update_active">启用/禁用用户</option>
+          <option value="user.reset_password">重置密码</option>
+          <option value="knowledge.create">新增知识</option>
+          <option value="knowledge.update">修改知识</option>
+          <option value="knowledge.delete">删除知识</option>
+        </select>
+      </label>
+      <label>
+        <span>结果</span>
+        <select id="auditSuccessFilter">
+          <option value="">全部结果</option>
+          <option value="true">成功</option>
+          <option value="false">失败</option>
+        </select>
+      </label>
+      <label>
+        <span>操作者</span>
+        <input id="auditActorFilter" type="text" placeholder="例如：manager1" />
+      </label>
+      <button class="ghost" id="applyAuditLogFilterBtn" type="button">筛选审计日志</button>
+    </div>
+  `;
+}
+
+function buildAuditLogQueryString(action = "", success = "", actor = "") {
+  const params = new URLSearchParams();
+  params.set("limit", "30");
+  if (action) params.set("action", action);
+  if (success) params.set("success", success);
+  if (actor) params.set("actor", actor);
+  return `?${params.toString()}`;
+}
+
+function getAuditLogErrorMessage(message) {
+  if (message.includes("404")) {
+    return "审计日志接口不存在，请重启后端服务，让最新 routes.py 生效。";
+  }
+  if (message.includes("401")) {
+    return "登录已失效，请重新登录主管账号。";
+  }
+  if (message.includes("403")) {
+    return "当前账号不是主管，不能查看审计日志。";
+  }
+  return "审计日志加载失败，请确认后端服务正在运行。";
+}
+
+async function fetchAuditLogs() {
+  const loadingBubble = appendBubble("agent", "正在加载操作审计日志...", { typing: true });
+
+  try {
+    const [statsRes, logsRes] = await Promise.all([
+      fetch(`${API_BASE}/audit-logs/stats`, { headers: buildAuthHeaders() }),
+      fetch(`${API_BASE}/audit-logs${buildAuditLogQueryString()}`, { headers: buildAuthHeaders() }),
+    ]);
+
+    if (!statsRes.ok || !logsRes.ok) {
+      throw new Error(`HTTP ${statsRes.status}/${logsRes.status}`);
+    }
+
+    const stats = await statsRes.json();
+    const logs = await logsRes.json();
+    const tableHtml = logs.length
+      ? renderAuditLogTable(logs)
+      : '<p class="empty-state">暂无操作审计日志。</p>';
+
+    setBubbleHtml(
+      loadingBubble,
+      `${renderAuditLogStats(stats)}${buildAuditLogFilterHtml()}<div class="tool-log-table-wrap">${tableHtml}</div>`
+    );
+    bindAuditLogFilter(loadingBubble);
+    bindAuditLogDetailButtons(loadingBubble, logs);
+    loadingBubble.classList.remove("typing");
+  } catch (err) {
+    setBubbleText(loadingBubble, getAuditLogErrorMessage(err.message));
+    loadingBubble.classList.remove("typing");
+  }
+}
+
+async function fetchFilteredAuditLogs(action, success, actor, container) {
+  try {
+    const res = await fetch(`${API_BASE}/audit-logs${buildAuditLogQueryString(action, success, actor)}`, {
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const logs = await res.json();
+    const oldTable = container.querySelector(".tool-log-table-wrap");
+    const tableHtml = logs.length
+      ? renderAuditLogTable(logs)
+      : '<p class="empty-state">没有匹配当前筛选条件的审计日志。</p>';
+
+    if (oldTable) {
+      oldTable.innerHTML = tableHtml;
+      bindAuditLogDetailButtons(container, logs);
+    }
+  } catch (err) {
+    appendBubble("agent", getAuditLogErrorMessage(err.message));
+  }
+}
+
+function bindAuditLogFilter(container) {
+  const actionSelect = container.querySelector("#auditActionFilter");
+  const successSelect = container.querySelector("#auditSuccessFilter");
+  const actorInput = container.querySelector("#auditActorFilter");
+  const applyButton = container.querySelector("#applyAuditLogFilterBtn");
+
+  if (!actionSelect || !successSelect || !actorInput || !applyButton) return;
+
+  applyButton.addEventListener("click", () => {
+    fetchFilteredAuditLogs(
+      actionSelect.value,
+      successSelect.value,
+      actorInput.value.trim(),
+      container
+    );
+  });
+}
+
 // 9. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
 // 9. 用户管理：主管可以查看账号、新增账号、调整普通客服/主管角色。
 function canManageUsers() {
@@ -1269,6 +1510,10 @@ toolLogsBtn.addEventListener("click", async () => {
 
 usersBtn.addEventListener("click", async () => {
   await loadUsers(true);
+});
+
+auditLogsBtn.addEventListener("click", async () => {
+  await fetchAuditLogs();
 });
 
 knowledgeBtn.addEventListener("click", async () => {

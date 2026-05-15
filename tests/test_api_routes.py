@@ -146,6 +146,110 @@ def test_tool_logs_endpoint_supports_source_and_success_filters():
     assert logs[0]["success"] is False
 
 
+def test_audit_logs_require_manager_role():
+    token = login_token("agent1", "agent123")
+
+    response = client.get(
+        "/audit-logs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "required role: manager"
+
+
+def test_manager_can_view_audit_logs_and_stats():
+    token = login_token("manager1", "manager123")
+
+    logs_response = client.get(
+        "/audit-logs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    stats_response = client.get(
+        "/audit-logs/stats",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert logs_response.status_code == 200
+    assert isinstance(logs_response.json(), list)
+    assert stats_response.status_code == 200
+    assert "total" in stats_response.json()
+    assert "actions" in stats_response.json()
+
+
+def test_login_success_and_failure_write_audit_logs():
+    manager_token = login_token("manager1", "manager123")
+    client.post(
+        "/auth/login",
+        json={"username": "agent1", "password": "wrong-password"},
+    )
+
+    response = client.get(
+        "/audit-logs?limit=20",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+
+    actions = [item["action"] for item in response.json()]
+    assert response.status_code == 200
+    assert "auth.login_success" in actions
+    assert "auth.login_failed" in actions
+
+
+def test_user_create_writes_audit_log():
+    token = login_token("manager1", "manager123")
+    username = "pytest_audit_user_create"
+
+    client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "agent123",
+            "display_name": "Audit User",
+            "role": "agent",
+        },
+    )
+    response = client.get(
+        "/audit-logs?limit=20",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    logs = response.json()
+    assert response.status_code == 200
+    assert any(
+        item["action"] == "user.create" and item["target_id"] == username and item["success"] is True
+        for item in logs
+    )
+
+
+def test_audit_logs_support_action_success_and_actor_filters():
+    token = login_token("manager1", "manager123")
+    username = "pytest_audit_filter_user"
+
+    client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "username": username,
+            "password": "agent123",
+            "display_name": "Audit Filter User",
+            "role": "agent",
+        },
+    )
+
+    response = client.get(
+        "/audit-logs?action=user.create&success=true&actor=manager1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    logs = response.json()
+    assert response.status_code == 200
+    assert logs
+    assert all(item["action"] == "user.create" for item in logs)
+    assert all(item["success"] is True for item in logs)
+    assert all(item["actor_username"] == "manager1" for item in logs)
+
+
 def test_login_success_and_auth_me():
     login_response = client.post(
         "/auth/login",

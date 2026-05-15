@@ -849,16 +849,19 @@ table {
   color: var(--text);
 }
 
-.tool-log-detail {
+.tool-log-detail,
+.audit-log-detail {
   display: grid;
   gap: 8px;
 }
 
-.tool-log-detail strong {
+.tool-log-detail strong,
+.audit-log-detail strong {
   color: var(--navy);
 }
 
-.tool-log-detail p {
+.tool-log-detail p,
+.audit-log-detail p {
   margin: 0;
   color: var(--muted);
 }
@@ -870,13 +873,15 @@ table {
   margin: 4px 0;
 }
 
-.tool-log-detail label {
+.tool-log-detail label,
+.audit-log-detail label {
   margin-top: 6px;
   color: var(--navy);
   font-weight: 800;
 }
 
-.tool-log-detail pre {
+.tool-log-detail pre,
+.audit-log-detail pre {
   max-height: 260px;
   overflow: auto;
   margin: 0;

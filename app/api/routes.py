@@ -29,6 +29,8 @@ from app.storage.db import (
     ALLOWED_ORDER_STATUSES,
     ALLOWED_USER_ROLES,
     delete_complaint_note,
+    fetch_audit_log_stats,
+    fetch_audit_logs,
     fetch_logistics,
     fetch_orders,
     fetch_complaint_notes,
@@ -47,6 +49,7 @@ from app.storage.db import (
     insert_order,
     insert_logistics,
     insert_complaint_note,
+    insert_audit_log,
     login_user,
     logout_user_by_token,
     reset_user_password,
@@ -94,6 +97,25 @@ def require_manager(authorization: str = None) -> dict:
     return require_role(authorization, {"manager"})
 
 
+def write_audit_log(
+    action: str,
+    actor: dict = None,
+    target_type: str = None,
+    target_id: str = None,
+    success: bool = True,
+    detail: dict = None,
+) -> None:
+    insert_audit_log(
+        action=action,
+        actor_username=actor["username"] if actor else None,
+        actor_role=actor["role"] if actor else None,
+        target_type=target_type,
+        target_id=target_id,
+        success=success,
+        detail=detail,
+    )
+
+
 # 1. 基础检查接口：用来确认后端服务是否正常运行。
 @router.get("/health")
 def health_check() -> dict:
@@ -110,6 +132,24 @@ def tool_log_stats() -> dict:
     return fetch_tool_call_stats()
 
 
+@router.get("/audit-logs")
+def audit_logs(
+    limit: int = 50,
+    action: str = None,
+    success: bool = None,
+    actor: str = None,
+    authorization: str = Header(default=None),
+) -> list:
+    require_manager(authorization)
+    return fetch_audit_logs(limit=limit, action=action, success=success, actor_username=actor)
+
+
+@router.get("/audit-logs/stats")
+def audit_log_stats(authorization: str = Header(default=None)) -> dict:
+    require_manager(authorization)
+    return fetch_audit_log_stats()
+
+
 @router.get("/tools/function-calling")
 def function_calling_tools() -> list:
     return list_function_calling_tools()
@@ -120,7 +160,21 @@ def function_calling_tools() -> list:
 def login(req: LoginRequest) -> dict:
     result = login_user(req.username, req.password)
     if result is None:
+        write_audit_log(
+            "auth.login_failed",
+            target_type="user",
+            target_id=req.username,
+            success=False,
+            detail={"reason": "invalid username, password, or disabled user"},
+        )
         raise HTTPException(status_code=401, detail="invalid username or password")
+    write_audit_log(
+        "auth.login_success",
+        actor=result["user"],
+        target_type="user",
+        target_id=result["user"]["username"],
+        success=True,
+    )
     return result
 
 
@@ -138,9 +192,12 @@ def auth_me(authorization: str = Header(default=None)) -> dict:
 @router.post("/auth/logout")
 def logout(authorization: str = Header(default=None)) -> dict:
     token = extract_bearer_token(authorization)
+    user = get_user_by_token(token)
     logged_out = logout_user_by_token(token)
     if not logged_out:
+        write_audit_log("auth.logout_failed", actor=user, success=False)
         raise HTTPException(status_code=401, detail="invalid or missing token")
+    write_audit_log("auth.logout", actor=user, target_type="user", target_id=user["username"] if user else None)
     return {"logged_out": True}
 
 
@@ -152,13 +209,38 @@ def users(authorization: str = Header(default=None)) -> list:
 
 @router.post("/users")
 def create_user(req: UserCreateRequest, authorization: str = Header(default=None)) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     if req.role not in ALLOWED_USER_ROLES:
+        write_audit_log(
+            "user.create",
+            actor=actor,
+            target_type="user",
+            target_id=req.username,
+            success=False,
+            detail={"reason": "invalid user role", "role": req.role},
+        )
         raise HTTPException(status_code=400, detail="invalid user role")
 
     try:
-        return insert_user(req.username, req.password, req.display_name, req.role)
+        user = insert_user(req.username, req.password, req.display_name, req.role)
+        write_audit_log(
+            "user.create",
+            actor=actor,
+            target_type="user",
+            target_id=req.username,
+            success=True,
+            detail={"role": req.role},
+        )
+        return user
     except sqlite3.IntegrityError:
+        write_audit_log(
+            "user.create",
+            actor=actor,
+            target_type="user",
+            target_id=req.username,
+            success=False,
+            detail={"reason": "user already exists"},
+        )
         raise HTTPException(status_code=409, detail="user already exists")
 
 
@@ -168,13 +250,37 @@ def update_user_role_endpoint(
     req: UserRoleUpdateRequest,
     authorization: str = Header(default=None),
 ) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     if req.role not in ALLOWED_USER_ROLES:
+        write_audit_log(
+            "user.update_role",
+            actor=actor,
+            target_type="user",
+            target_id=username,
+            success=False,
+            detail={"reason": "invalid user role", "role": req.role},
+        )
         raise HTTPException(status_code=400, detail="invalid user role")
 
     user = update_user_role(username, req.role)
     if user is None:
+        write_audit_log(
+            "user.update_role",
+            actor=actor,
+            target_type="user",
+            target_id=username,
+            success=False,
+            detail={"reason": "user not found", "role": req.role},
+        )
         raise HTTPException(status_code=404, detail="user not found")
+    write_audit_log(
+        "user.update_role",
+        actor=actor,
+        target_type="user",
+        target_id=username,
+        success=True,
+        detail={"role": req.role},
+    )
     return user
 
 
@@ -184,10 +290,26 @@ def update_user_active_endpoint(
     req: UserActiveUpdateRequest,
     authorization: str = Header(default=None),
 ) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     user = update_user_active(username, req.is_active)
     if user is None:
+        write_audit_log(
+            "user.update_active",
+            actor=actor,
+            target_type="user",
+            target_id=username,
+            success=False,
+            detail={"reason": "user not found", "is_active": req.is_active},
+        )
         raise HTTPException(status_code=404, detail="user not found")
+    write_audit_log(
+        "user.update_active",
+        actor=actor,
+        target_type="user",
+        target_id=username,
+        success=True,
+        detail={"is_active": req.is_active},
+    )
     return user
 
 
@@ -197,13 +319,36 @@ def reset_user_password_endpoint(
     req: UserPasswordResetRequest,
     authorization: str = Header(default=None),
 ) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     if not req.password:
+        write_audit_log(
+            "user.reset_password",
+            actor=actor,
+            target_type="user",
+            target_id=username,
+            success=False,
+            detail={"reason": "password is required"},
+        )
         raise HTTPException(status_code=400, detail="password is required")
 
     user = reset_user_password(username, req.password)
     if user is None:
+        write_audit_log(
+            "user.reset_password",
+            actor=actor,
+            target_type="user",
+            target_id=username,
+            success=False,
+            detail={"reason": "user not found"},
+        )
         raise HTTPException(status_code=404, detail="user not found")
+    write_audit_log(
+        "user.reset_password",
+        actor=actor,
+        target_type="user",
+        target_id=username,
+        success=True,
+    )
     return user
 
 
@@ -406,10 +551,26 @@ def knowledge_article_detail(article_id: int) -> dict:
 
 @router.post("/knowledge")
 def create_knowledge_article(req: KnowledgeArticleCreateRequest, authorization: str = Header(default=None)) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     try:
-        return insert_knowledge_article(req.title, req.content, req.tags, req.enabled)
+        article = insert_knowledge_article(req.title, req.content, req.tags, req.enabled)
+        write_audit_log(
+            "knowledge.create",
+            actor=actor,
+            target_type="knowledge",
+            target_id=str(article["id"]),
+            success=True,
+            detail={"title": req.title, "enabled": req.enabled},
+        )
+        return article
     except ValueError as exc:
+        write_audit_log(
+            "knowledge.create",
+            actor=actor,
+            target_type="knowledge",
+            success=False,
+            detail={"reason": str(exc), "title": req.title},
+        )
         raise HTTPException(status_code=400, detail=str(exc))
 
 
@@ -419,8 +580,16 @@ def update_knowledge_article_endpoint(
     req: KnowledgeArticleUpdateRequest,
     authorization: str = Header(default=None),
 ) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     if req.title is None and req.content is None and req.tags is None and req.enabled is None:
+        write_audit_log(
+            "knowledge.update",
+            actor=actor,
+            target_type="knowledge",
+            target_id=str(article_id),
+            success=False,
+            detail={"reason": "empty update"},
+        )
         raise HTTPException(status_code=400, detail="title, content, tags or enabled is required")
 
     try:
@@ -432,17 +601,61 @@ def update_knowledge_article_endpoint(
             enabled=req.enabled,
         )
     except ValueError as exc:
+        write_audit_log(
+            "knowledge.update",
+            actor=actor,
+            target_type="knowledge",
+            target_id=str(article_id),
+            success=False,
+            detail={"reason": str(exc)},
+        )
         raise HTTPException(status_code=400, detail=str(exc))
 
     if article is None:
+        write_audit_log(
+            "knowledge.update",
+            actor=actor,
+            target_type="knowledge",
+            target_id=str(article_id),
+            success=False,
+            detail={"reason": "knowledge article not found"},
+        )
         raise HTTPException(status_code=404, detail="knowledge article not found")
+    write_audit_log(
+        "knowledge.update",
+        actor=actor,
+        target_type="knowledge",
+        target_id=str(article_id),
+        success=True,
+        detail={
+            "title_changed": req.title is not None,
+            "content_changed": req.content is not None,
+            "tags_changed": req.tags is not None,
+            "enabled_changed": req.enabled is not None,
+        },
+    )
     return article
 
 
 @router.delete("/knowledge/{article_id}")
 def delete_knowledge_article_endpoint(article_id: int, authorization: str = Header(default=None)) -> dict:
-    require_manager(authorization)
+    actor = require_manager(authorization)
     deleted = delete_knowledge_article(article_id)
     if not deleted:
+        write_audit_log(
+            "knowledge.delete",
+            actor=actor,
+            target_type="knowledge",
+            target_id=str(article_id),
+            success=False,
+            detail={"reason": "knowledge article not found"},
+        )
         raise HTTPException(status_code=404, detail="knowledge article not found")
+    write_audit_log(
+        "knowledge.delete",
+        actor=actor,
+        target_type="knowledge",
+        target_id=str(article_id),
+        success=True,
+    )
     return {"deleted": True, "id": article_id}

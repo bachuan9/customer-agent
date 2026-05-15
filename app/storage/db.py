@@ -80,6 +80,7 @@ def init_db() -> None:
     migrate_complaints_table()
     init_complaint_notes_table()
     init_tool_call_logs_table()
+    init_audit_logs_table()
     init_orders_table()
     init_logistics_table()
     init_knowledge_articles_table()
@@ -558,6 +559,133 @@ def fetch_tool_call_stats() -> Dict:
                 "count": row["count"],
             }
             for row in source_rows
+        ],
+    }
+
+
+def init_audit_logs_table() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_username TEXT DEFAULT NULL,
+                actor_role TEXT DEFAULT NULL,
+                action TEXT NOT NULL,
+                target_type TEXT DEFAULT NULL,
+                target_id TEXT DEFAULT NULL,
+                success INTEGER NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def insert_audit_log(
+    action: str,
+    actor_username: Optional[str] = None,
+    actor_role: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    success: bool = True,
+    detail: Optional[Dict] = None,
+) -> None:
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO audit_logs (
+                actor_username, actor_role, action, target_type, target_id, success, detail, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_username,
+                actor_role,
+                action,
+                target_type,
+                target_id,
+                1 if success else 0,
+                json.dumps(detail or {}, ensure_ascii=False),
+                created_at,
+            ),
+        )
+        conn.commit()
+
+
+def fetch_audit_logs(
+    limit: int = 50,
+    action: Optional[str] = None,
+    success: Optional[bool] = None,
+    actor_username: Optional[str] = None,
+) -> List[Dict]:
+    safe_limit = max(1, min(limit, 100))
+    query = """
+        SELECT id, actor_username, actor_role, action, target_type, target_id, success, detail, created_at
+        FROM audit_logs
+    """
+    conditions = []
+    params = []
+
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if success is not None:
+        conditions.append("success = ?")
+        params.append(1 if success else 0)
+    if actor_username:
+        conditions.append("actor_username = ?")
+        params.append(actor_username)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(safe_limit)
+
+    with get_connection() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+
+    return [
+        {
+            "id": row["id"],
+            "actor_username": row["actor_username"],
+            "actor_role": row["actor_role"],
+            "action": row["action"],
+            "target_type": row["target_type"],
+            "target_id": row["target_id"],
+            "success": bool(row["success"]),
+            "detail": json.loads(row["detail"]),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def fetch_audit_log_stats() -> Dict:
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) AS count FROM audit_logs").fetchone()["count"]
+        success = conn.execute("SELECT COUNT(*) AS count FROM audit_logs WHERE success = 1").fetchone()["count"]
+        failed = conn.execute("SELECT COUNT(*) AS count FROM audit_logs WHERE success = 0").fetchone()["count"]
+        action_rows = conn.execute(
+            """
+            SELECT action, COUNT(*) AS count
+            FROM audit_logs
+            GROUP BY action
+            ORDER BY count DESC
+            """
+        ).fetchall()
+
+    return {
+        "total": total,
+        "success": success,
+        "failed": failed,
+        "actions": [
+            {
+                "action": row["action"],
+                "count": row["count"],
+            }
+            for row in action_rows
         ],
     }
 
