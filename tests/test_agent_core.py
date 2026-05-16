@@ -4,7 +4,7 @@ from app.services.agent import (
     run_agent,
     set_pending_llm_action,
 )
-from app.services.llm_agent import extract_first_tool_call
+from app.services.llm_agent import build_messages, extract_first_tool_call
 from app.storage.db import fetch_tool_call_logs, get_order_status
 
 
@@ -30,6 +30,16 @@ def test_extract_first_tool_call_parses_function_arguments():
 
     assert tool_name == "query_order"
     assert arguments == {"order_no": "A101"}
+
+
+def test_llm_prompt_guides_logistics_issue_to_combined_tool():
+    messages = build_messages("我的物流 L101 48小时了，怎么还没发货")
+    system_prompt = messages[0]["content"]
+
+    assert "handle_logistics_issue" in system_prompt
+    assert "物流超时" in system_prompt
+    assert "48小时未更新" in system_prompt
+    assert "没发货" in system_prompt
 
 
 def test_rbac_manager_can_update_order_but_agent_cannot():

@@ -365,6 +365,14 @@ def format_llm_tool_selection_reply(selection):
             return "未找到"
         return format_logistics_status_reply(result["tracking_no"], result["status"])
 
+    if tool_name == "handle_logistics_issue":
+        return format_logistics_issue_reply(
+            result["tracking_no"],
+            result["logistics_result"],
+            result["knowledge_result"],
+            suggest_complaint=result.get("suggest_complaint", False),
+        )
+
     if tool_name == "update_order":
         return format_order_update_reply(result)
 

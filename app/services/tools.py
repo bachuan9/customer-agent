@@ -47,6 +47,16 @@ KNOWLEDGE_KEYWORD_GROUPS = {
         "专属客服",
     ],
 }
+LOGISTICS_ISSUE_SUGGESTION_KEYWORDS = {
+    "48小时",
+    "48 小时",
+    "超时",
+    "没发货",
+    "未发货",
+    "没更新",
+    "未更新",
+    "延迟",
+}
 
 from app.storage.db import (
     ALLOWED_COMPLAINT_PRIORITIES,
@@ -89,6 +99,33 @@ def query_logistics(tracking_no: str) -> Dict[str, Any]:
         "tracking_no": tracking_no,
         "order_no": logistics["order_no"],
         "status": logistics["status"],
+    }
+
+
+def should_suggest_logistics_complaint(query: str) -> bool:
+    return any(keyword in query for keyword in LOGISTICS_ISSUE_SUGGESTION_KEYWORDS)
+
+
+def handle_logistics_issue(tracking_no: str, query: str) -> Dict[str, Any]:
+    logistics_result = query_logistics(tracking_no)
+    knowledge_result = search_knowledge(query)
+    suggest_complaint = should_suggest_logistics_complaint(query)
+
+    return {
+        "found": logistics_result.get("found", False),
+        "tracking_no": tracking_no,
+        "order_no": logistics_result.get("order_no"),
+        "logistics_status": logistics_result.get("status"),
+        "logistics_result": logistics_result,
+        "knowledge_result": knowledge_result,
+        "knowledge_found": knowledge_result.get("found", False),
+        "knowledge_sources": knowledge_result.get("sources", []),
+        "suggest_complaint": suggest_complaint,
+        "steps": [
+            "调用工具：query_logistics",
+            "调用工具：search_knowledge",
+            "判断是否需要建议创建投诉",
+        ],
     }
 
 
