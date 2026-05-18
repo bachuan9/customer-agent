@@ -234,6 +234,8 @@ def detect_intent(message):
         return "update_complaint_priority"
     if "更新投诉" in message:
         return "update_complaint_status"
+    if "主管接单" in message:
+        return "manager_take_complaint"
     if "分配投诉" in message:
         return "assign_complaint_handler"
     if "解决投诉" in message:
@@ -889,6 +891,7 @@ def build_agent_steps(
         "query_logistics": ["调用工具：query_logistics"],
         "search_knowledge": ["调用工具：search_knowledge"],
         "create_complaint": ["调用工具：create_complaint"],
+        "manager_take_complaint": ["调用工具：update_complaint", "设置处理人：客服主管", "设置状态：processing"],
         "confirm_llm_action": ["读取待确认 LLM 动作"],
         "confirm_update_order": ["读取待确认订单更新", "调用工具：update_order"],
         "confirm_update_logistics": ["读取待确认物流更新", "调用工具：update_logistics"],
@@ -1083,6 +1086,19 @@ def handle_intent(message, user_id, intent, pending_existing):
             result = call_tool("update_complaint", {"complaint_id": complaint_id, "handler": handler})
         except ValueError as exc:
             return f"投诉分配失败：{exc}"
+        return format_complaint_update_reply(result)
+
+    if intent == "manager_take_complaint":
+        complaint_id = extract_complaint_id(message)
+        if not complaint_id:
+            return "没有识别到投诉编号，请写成：主管接单 C-0001"
+        try:
+            result = call_tool(
+                "update_complaint",
+                {"complaint_id": complaint_id, "status": "processing", "handler": "客服主管"},
+            )
+        except ValueError as exc:
+            return f"主管接单失败：{exc}"
         return format_complaint_update_reply(result)
 
     if intent == "resolve_complaint":

@@ -466,6 +466,196 @@ def test_chat_endpoint_confirms_order_issue_complaint_as_high_priority():
     )
 
 
+def test_complaints_endpoint_filters_manager_high_priority_queue():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-queue",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-queue",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints?priority=high&handler=%E5%AE%A2%E6%9C%8D%E4%B8%BB%E7%AE%A1").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-manager-queue")
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-queue",
+                "message": f"主管接单 {complaint['id']}",
+                "role": "manager",
+            },
+        )
+        response = client.get(
+            "/complaints?priority=high&handler=%E5%AE%A2%E6%9C%8D%E4%B8%BB%E7%AE%A1&status=processing"
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert confirm_response.status_code == 200
+    assert response.status_code == 200
+    items = response.json()
+    assert any(item["user_id"] == "pytest-manager-queue" for item in items)
+    assert all(item["priority"] == "high" for item in items)
+    assert all(item["handler"] == "客服主管" for item in items)
+    assert all(item["status"] == "processing" for item in items)
+
+
+def test_chat_endpoint_manager_take_complaint_sets_handler_and_processing():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-take",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-take",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-manager-take")
+        take_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-take",
+                "message": f"主管接单 {complaint['id']}",
+                "role": "manager",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert confirm_response.status_code == 200
+    assert take_response.status_code == 200
+    assert "状态 处理中" in take_response.json()["reply"]
+    assert "处理人 客服主管" in take_response.json()["reply"]
+    assert "识别意图：manager_take_complaint" in take_response.json()["steps"]
+    assert "设置处理人：客服主管" in take_response.json()["steps"]
+    assert "设置状态：processing" in take_response.json()["steps"]
+
+
+def test_resolved_manager_complaint_leaves_processing_queue():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-resolved-queue",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-resolved-queue",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints?priority=high&handler=%E5%AE%A2%E6%9C%8D%E4%B8%BB%E7%AE%A1").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-manager-resolved-queue")
+        take_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-resolved-queue",
+                "message": f"主管接单 {complaint['id']}",
+                "role": "manager",
+            },
+        )
+        resolve_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-resolved-queue",
+                "message": f"解决投诉 {complaint['id']}",
+                "role": "manager",
+            },
+        )
+        queue_response = client.get(
+            "/complaints?priority=high&handler=%E5%AE%A2%E6%9C%8D%E4%B8%BB%E7%AE%A1&status=processing"
+        )
+        detail_response = client.get(f"/complaints/{complaint['id']}")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert confirm_response.status_code == 200
+    assert take_response.status_code == 200
+    assert resolve_response.status_code == 200
+    assert queue_response.status_code == 200
+    assert detail_response.status_code == 200
+
+    queue_items = queue_response.json()
+    assert all(item["id"] != complaint["id"] for item in queue_items)
+
+    resolved_complaint = detail_response.json()["complaint"]
+    assert resolved_complaint["status"] == "resolved"
+    assert resolved_complaint["resolved_at"] is not None
+
+
+def test_complaint_stats_includes_manager_processing_count():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-processing-stats",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-processing-stats",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints?priority=high&handler=%E5%AE%A2%E6%9C%8D%E4%B8%BB%E7%AE%A1").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-manager-processing-stats")
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-manager-processing-stats",
+                "message": f"主管接单 {complaint['id']}",
+                "role": "manager",
+            },
+        )
+        stats_response = client.get("/complaints/stats")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert stats_response.status_code == 200
+    stats = stats_response.json()
+    assert "manager_processing" in stats
+    assert stats["manager_processing"] >= 1
+
+
 def test_chat_endpoint_cancels_pending_complaint_when_llm_disabled():
     original_llm_enabled = settings.llm_enabled
     settings.llm_enabled = False

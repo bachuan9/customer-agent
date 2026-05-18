@@ -1048,6 +1048,10 @@ def fetch_complaint_stats() -> Dict[str, int]:
         processing = conn.execute("SELECT COUNT(*) AS count FROM complaints WHERE status = ?", ("processing",)).fetchone()["count"]
         resolved = conn.execute("SELECT COUNT(*) AS count FROM complaints WHERE status = ?", ("resolved",)).fetchone()["count"]
         high_priority = conn.execute("SELECT COUNT(*) AS count FROM complaints WHERE priority = ?", ("high",)).fetchone()["count"]
+        manager_processing = conn.execute(
+            "SELECT COUNT(*) AS count FROM complaints WHERE priority = ? AND handler = ? AND status = ?",
+            ("high", "客服主管", "processing"),
+        ).fetchone()["count"]
 
     return {
         "total": total,
@@ -1055,6 +1059,7 @@ def fetch_complaint_stats() -> Dict[str, int]:
         "processing": processing,
         "resolved": resolved,
         "high_priority": high_priority,
+        "manager_processing": manager_processing,
     }
 
 

@@ -14,6 +14,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const loginStatus = document.getElementById("loginStatus");
 const statusInput = document.getElementById("status");
 const complaintsBtn = document.getElementById("complaintsBtn");
+const managerQueueBtn = document.getElementById("managerQueueBtn");
 const ordersBtn = document.getElementById("ordersBtn");
 const logisticsBtn = document.getElementById("logisticsBtn");
 const chatSessionsBtn = document.getElementById("chatSessionsBtn");
@@ -218,7 +219,7 @@ function updateStatsCards(stats) {
   if (!stats) return;
   if (statsTotal) statsTotal.textContent = stats.total;
   if (statsPending) statsPending.textContent = stats.pending;
-  if (statsHighPriority) statsHighPriority.textContent = stats.high_priority;
+  if (statsHighPriority) statsHighPriority.textContent = stats.manager_processing;
   if (statsStatusText) {
     statsStatusText.textContent = `处理中 ${stats.processing} / 已解决 ${stats.resolved}`;
   }
@@ -226,7 +227,7 @@ function updateStatsCards(stats) {
     statsPendingText.textContent = stats.pending > 0 ? "需要客服优先跟进" : "当前没有待处理投诉";
   }
   if (statsHighText) {
-    statsHighText.textContent = stats.high_priority > 0 ? "需要重点关注" : "暂无高优先级投诉";
+    statsHighText.textContent = stats.manager_processing > 0 ? "主管有重点工单处理中" : "主管暂无处理中重点工单";
   }
 }
 
@@ -503,6 +504,8 @@ function fillComplaintAction(complaintId, action = "assign") {
   const agentName = agentNameInput?.value.trim() || "客服";
   const actionMessages = {
     assign: `分配投诉 ${complaintId} ${agentName}`,
+    assignManager: `分配投诉 ${complaintId} 客服主管`,
+    managerTake: `主管接单 ${complaintId}`,
     detail: `查看投诉 ${complaintId}`,
     processing: `更新投诉 ${complaintId} processing`,
     resolved: `解决投诉 ${complaintId}`,
@@ -516,6 +519,8 @@ function fillComplaintAction(complaintId, action = "assign") {
   };
   const actionLabels = {
     assign: "分配处理人",
+    assignManager: "分配给客服主管",
+    managerTake: "主管接单",
     detail: "查看详情",
     processing: "改为处理中",
     resolved: "解决投诉",
@@ -1712,80 +1717,109 @@ clearBtn.addEventListener("click", async () => {
 chatSessionsBtn.addEventListener("click", loadChatSessions);
 
 // 9. 投诉列表查询：渲染投诉记录和每行操作按钮。
-complaintsBtn.addEventListener("click", async () => {
-  const userId = userIdInput.value.trim();
-  const query = userId ? `?user_id=${encodeURIComponent(userId)}` : "";
-  const loadingBubble = appendBubble("agent", "正在查询投诉记录...", { typing: true });
+function buildComplaintQuery(params = {}) {
+  const queryParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) queryParams.set(key, value);
+  });
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : "";
+}
+
+function renderComplaintTable(data) {
+  return renderTable(
+    [
+      {
+        key: "id",
+        label: "编号",
+        render: (value) => {
+          const id = escapeHtml(String(value));
+          return id;
+        },
+      },
+      { key: "user_id", label: "用户ID" },
+      { key: "status", label: "状态" },
+      { key: "priority", label: "优先级" },
+      { key: "handler", label: "处理人" },
+      { key: "content", label: "内容" },
+      { key: "created_at", label: "创建时间" },
+      {
+        key: "id",
+        label: "操作",
+        render: (value) => {
+          const id = escapeHtml(String(value));
+          return `
+            <div class="table-actions">
+              <button class="link-button complaint-action-btn" data-action="assign" data-complaint-id="${id}" type="button">分配给 Alice</button>
+              <button class="link-button complaint-action-btn" data-action="assignManager" data-complaint-id="${id}" type="button">分配给客服主管</button>
+              <button class="link-button complaint-action-btn" data-action="managerTake" data-complaint-id="${id}" type="button">主管接单</button>
+              <button class="link-button complaint-action-btn" data-action="detail" data-complaint-id="${id}" type="button">查看详情</button>
+              <button class="link-button complaint-action-btn" data-action="processing" data-complaint-id="${id}" type="button">改为处理中</button>
+              <button class="link-button complaint-action-btn danger" data-action="resolved" data-complaint-id="${id}" type="button">解决投诉</button>
+              <button class="link-button complaint-action-btn" data-action="priorityHigh" data-complaint-id="${id}" type="button">高优先级</button>
+              <button class="link-button complaint-action-btn" data-action="priorityMedium" data-complaint-id="${id}" type="button">中优先级</button>
+              <button class="link-button complaint-action-btn" data-action="priorityLow" data-complaint-id="${id}" type="button">低优先级</button>
+              <button class="link-button complaint-action-btn" data-action="addNote" data-complaint-id="${id}" type="button">添加备注</button>
+              <button class="link-button complaint-action-btn" data-action="listNotes" data-complaint-id="${id}" type="button">查看备注</button>
+              <button class="link-button complaint-action-btn" data-action="editNote" data-complaint-id="${id}" type="button">修改备注</button>
+              <button class="link-button complaint-action-btn danger" data-action="deleteNote" data-complaint-id="${id}" type="button">删除备注</button>
+            </div>
+          `;
+        },
+      },
+    ],
+    data.map((item) => ({
+      id: item.id,
+      user_id: item.user_id,
+      status: item.status,
+      priority: item.priority,
+      handler: item.handler || "暂未分配",
+      content: item.content,
+      created_at: item.created_at,
+    }))
+  );
+}
+
+async function loadComplaints({ params = {}, loadingText = "正在查询投诉记录...", emptyText = "暂无投诉记录。" } = {}) {
+  const loadingBubble = appendBubble("agent", loadingText, { typing: true });
 
   try {
-    const res = await fetch(`${API_BASE}/complaints${query}`);
+    const res = await fetch(`${API_BASE}/complaints${buildComplaintQuery(params)}`);
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
 
     const data = await res.json();
     if (!data.length) {
-      setBubbleText(loadingBubble, "暂无投诉记录。");
+      setBubbleText(loadingBubble, emptyText);
       loadingBubble.classList.remove("typing");
       return;
     }
 
-    setBubbleHtml(
-      loadingBubble,
-      renderTable(
-        [
-          {
-            key: "id",
-            label: "编号",
-            render: (value) => {
-              const id = escapeHtml(String(value));
-              return id;
-            },
-          },
-          { key: "user_id", label: "用户ID" },
-          { key: "status", label: "状态" },
-          { key: "priority", label: "优先级" },
-          { key: "content", label: "内容" },
-          { key: "created_at", label: "创建时间" },
-          {
-            key: "id",
-            label: "操作",
-            render: (value) => {
-              const id = escapeHtml(String(value));
-              return `
-                <div class="table-actions">
-                  <button class="link-button complaint-action-btn" data-action="assign" data-complaint-id="${id}" type="button">分配给 Alice</button>
-                  <button class="link-button complaint-action-btn" data-action="detail" data-complaint-id="${id}" type="button">查看详情</button>
-                  <button class="link-button complaint-action-btn" data-action="processing" data-complaint-id="${id}" type="button">改为处理中</button>
-                  <button class="link-button complaint-action-btn danger" data-action="resolved" data-complaint-id="${id}" type="button">解决投诉</button>
-                  <button class="link-button complaint-action-btn" data-action="priorityHigh" data-complaint-id="${id}" type="button">高优先级</button>
-                  <button class="link-button complaint-action-btn" data-action="priorityMedium" data-complaint-id="${id}" type="button">中优先级</button>
-                  <button class="link-button complaint-action-btn" data-action="priorityLow" data-complaint-id="${id}" type="button">低优先级</button>
-                  <button class="link-button complaint-action-btn" data-action="addNote" data-complaint-id="${id}" type="button">添加备注</button>
-                  <button class="link-button complaint-action-btn" data-action="listNotes" data-complaint-id="${id}" type="button">查看备注</button>
-                  <button class="link-button complaint-action-btn" data-action="editNote" data-complaint-id="${id}" type="button">修改备注</button>
-                  <button class="link-button complaint-action-btn danger" data-action="deleteNote" data-complaint-id="${id}" type="button">删除备注</button>
-                </div>
-              `;
-            },
-          },
-        ],
-        data.map((item) => ({
-          id: item.id,
-          user_id: item.user_id,
-          status: item.status,
-          priority: item.priority,
-          content: item.content,
-          created_at: item.created_at,
-        }))
-      )
-    );
+    setBubbleHtml(loadingBubble, renderComplaintTable(data));
     bindComplaintActionButtons(loadingBubble);
     loadingBubble.classList.remove("typing");
   } catch (err) {
     setBubbleText(loadingBubble, "投诉查询失败，请确认后端服务正在运行。");
     loadingBubble.classList.remove("typing");
   }
+}
+
+complaintsBtn.addEventListener("click", async () => {
+  const userId = userIdInput.value.trim();
+  await loadComplaints({
+    params: userId ? { user_id: userId } : {},
+  });
+});
+
+managerQueueBtn.addEventListener("click", async () => {
+  await loadComplaints({
+    params: { priority: "high", handler: "客服主管", status: "processing" },
+    loadingText: "正在查询主管待处理工单...",
+    emptyText: "暂无客服主管正在处理的高优先级投诉。",
+  });
 });
 
 // 10. 订单和物流列表查询。

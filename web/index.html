@@ -94,6 +94,7 @@
               <button id="ordersBtn" class="ghost">订单列表</button>
               <button id="logisticsBtn" class="ghost">物流列表</button>
               <button id="complaintsBtn" class="ghost">投诉记录</button>
+              <button id="managerQueueBtn" class="ghost">主管待处理</button>
               <button id="chatSessionsBtn" class="ghost">会话列表</button>
               <button id="knowledgeBtn" class="ghost">知识库</button>
               <button id="toolLogsBtn" class="ghost">工具日志</button>
@@ -177,9 +178,9 @@
               <p id="statsPendingText">需要客服优先跟进</p>
             </article>
             <article class="summary-card">
-              <span>高优先级</span>
+              <span>主管待处理</span>
               <strong id="statsHighPriority">-</strong>
-              <p id="statsHighText">high priority complaints</p>
+              <p id="statsHighText">高优先级 / 客服主管 / 处理中</p>
             </article>
           </section>
 
@@ -293,6 +294,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=20260518-rag-reason-v1"></script>
+    <script src="./app.js?v=20260518-manager-processing-stats-v1"></script>
   </body>
 </html>
