@@ -28,9 +28,12 @@ from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
     ALLOWED_ORDER_STATUSES,
     ALLOWED_USER_ROLES,
+    clear_chat_messages,
+    clear_session_messages,
     delete_complaint_note,
     fetch_audit_log_stats,
     fetch_audit_logs,
+    fetch_chat_messages,
     fetch_logistics,
     fetch_orders,
     fetch_complaint_notes,
@@ -53,6 +56,7 @@ from app.storage.db import (
     login_user,
     logout_user_by_token,
     reset_user_password,
+    save_chat_message,
     delete_knowledge_article,
     update_complaint,
     update_complaint_note,
@@ -95,6 +99,19 @@ def require_role(authorization: str = None, allowed_roles: Set[str] = None) -> d
 
 def require_manager(authorization: str = None) -> dict:
     return require_role(authorization, {"manager"})
+
+
+def ensure_chat_history_access(user_id: str, authorization: str = None) -> None:
+    token = extract_bearer_token(authorization)
+    if not token:
+        return
+
+    user = get_user_by_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid or missing token")
+    if user["role"] == "manager" or user["username"] == user_id:
+        return
+    raise HTTPException(status_code=403, detail="cannot access another user's chat history")
 
 
 def write_audit_log(
@@ -366,7 +383,23 @@ def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatRes
         )
 
     result = run_agent_with_steps(req)
+    save_chat_message(req.user_id, "user", req.message)
+    save_chat_message(req.user_id, "agent", result["reply"], steps=result["steps"])
     return ChatResponse(reply=result["reply"], steps=result["steps"])
+
+
+@router.get("/chat/history/{user_id}")
+def chat_history(user_id: str, limit: int = 50, authorization: str = Header(default=None)) -> list:
+    ensure_chat_history_access(user_id, authorization)
+    return fetch_chat_messages(user_id, limit=limit)
+
+
+@router.delete("/chat/history/{user_id}")
+def delete_chat_history(user_id: str, authorization: str = Header(default=None)) -> dict:
+    ensure_chat_history_access(user_id, authorization)
+    deleted = clear_chat_messages(user_id)
+    clear_session_messages(user_id)
+    return {"deleted": deleted, "session_cleared": True}
 
 
 # 4. 投诉列表接口：支持按 user_id、status、priority、handler 筛选投诉。

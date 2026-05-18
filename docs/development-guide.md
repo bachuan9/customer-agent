@@ -218,7 +218,56 @@ manager1 / manager123
 Agent 回复里能参考知识库内容。
 ```
 
-### 5.5 用户管理
+### 5.5 聊天历史和会话状态
+
+本项目把“用户能看到的聊天历史”和“Agent 内部状态”分开保存：
+
+```text
+chat_messages：真实聊天记录，保存用户消息、Agent 回复和 Agent 执行步骤。
+session_messages：Agent 内部记忆，保存 waiting_confirm、pending_update 等流程状态。
+```
+
+这样设计的原因是：
+
+```text
+聊天历史用于页面展示和回看。
+Agent 执行步骤用于回看当时经过了哪些工具、是否调用 LLM、回复来源是什么。
+内部状态用于多轮流程控制，不应该直接当成聊天内容展示。
+```
+
+手动测试：
+
+```text
+1. 打开网页，发送“查订单 A101”。
+2. 确认 Agent 回复下方出现“Agent 执行步骤”。
+3. 刷新页面，确认刚才的聊天气泡和 Agent 执行步骤仍然显示。
+4. 点击“清空聊天”。
+5. 再次刷新页面，确认历史不会回来。
+```
+
+清空聊天会同时做两件事：
+
+```text
+删除 chat_messages 里的聊天历史。
+删除 session_messages 里的 Agent 内部待确认状态。
+```
+
+权限规则：
+
+```text
+未登录：保留教学模式，可以按 user_id 查看和清空历史。
+普通客服登录：只能查看和清空自己的历史。
+主管登录：可以查看和清空任意用户历史。
+```
+
+相关接口：
+
+```text
+GET    /chat/history/{user_id}
+DELETE /chat/history/{user_id}
+```
+
+### 5.6 用户管理
 
 使用主管账号登录：
 
@@ -371,7 +420,7 @@ manager1 / manager123
 当前完整测试应看到：
 
 ```text
-49 passed
+75 passed
 ```
 
 检查前端 JavaScript：
@@ -399,6 +448,8 @@ node --check web\app.js
 ```text
 GET    /health
 POST   /chat
+GET    /chat/history/{user_id}
+DELETE /chat/history/{user_id}
 
 POST   /auth/login
 GET    /auth/me

@@ -41,6 +41,121 @@ def test_chat_endpoint_uses_rule_agent_when_llm_disabled():
 
     assert response.status_code == 200
     assert "订单 A101" in response.json()["reply"]
+    assert "执行模式：规则 Agent（本次未调用 LLM）" in response.json()["steps"]
+    assert "回复来源：规则模板" in response.json()["steps"]
+    assert "调用工具：query_order" in response.json()["steps"]
+
+
+def test_chat_endpoint_saves_user_and_agent_messages_to_history():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    user_id = "pytest-chat-history"
+
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "查订单 A101",
+                "role": "agent",
+            },
+        )
+        history_response = client.get(f"/chat/history/{user_id}")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert response.status_code == 200
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert history[-2]["sender"] == "user"
+    assert history[-2]["message"] == "查订单 A101"
+    assert history[-1]["sender"] == "agent"
+    assert history[-1]["message"] == response.json()["reply"]
+    assert history[-1]["steps"] == response.json()["steps"]
+
+
+def test_delete_chat_history_endpoint_clears_saved_messages():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    user_id = "pytest-clear-chat-history"
+
+    try:
+        chat_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "查订单 A101",
+                "role": "agent",
+            },
+        )
+        delete_response = client.delete(f"/chat/history/{user_id}")
+        history_response = client.get(f"/chat/history/{user_id}")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert chat_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] >= 2
+    assert delete_response.json()["session_cleared"] is True
+    assert history_response.status_code == 200
+    assert history_response.json() == []
+
+
+def test_delete_chat_history_endpoint_clears_pending_agent_memory():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    user_id = "pytest-clear-chat-session-memory"
+
+    try:
+        issue_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        delete_response = client.delete(f"/chat/history/{user_id}")
+        confirm_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert issue_response.status_code == 200
+    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert delete_response.status_code == 200
+    assert delete_response.json()["session_cleared"] is True
+    assert confirm_response.status_code == 200
+    assert "当前没有待确认创建的投诉" in confirm_response.json()["reply"]
+
+
+def test_agent_cannot_access_another_users_chat_history_when_logged_in():
+    token = login_token("agent1", "agent123")
+
+    response = client.get(
+        "/chat/history/other-user",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "cannot access another user's chat history"
+
+
+def test_manager_can_access_another_users_chat_history_when_logged_in():
+    token = login_token("manager1", "manager123")
+
+    response = client.get(
+        "/chat/history/agent1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
 
 
 def test_chat_endpoint_handles_logistics_issue_with_policy_when_llm_disabled():
@@ -71,8 +186,10 @@ def test_chat_endpoint_handles_logistics_issue_with_policy_when_llm_disabled():
     assert "创建投诉" in reply
     assert "客服主管" in reply
     assert "识别意图：logistics_issue" in steps
-    assert "调用工具：query_logistics" in steps
-    assert "调用工具：search_knowledge" in steps
+    assert "执行模式：规则 Agent（本次未调用 LLM）" in steps
+    assert "调用组合工具：handle_logistics_issue" in steps
+    assert "内部调用：query_logistics" in steps
+    assert "内部调用：search_knowledge" in steps
     assert "保存待确认动作：waiting_confirm" in steps
 
 
@@ -95,8 +212,9 @@ def test_chat_endpoint_logistics_issue_keeps_waiting_confirm_when_llm_enabled():
     steps = response.json()["steps"]
     assert response.status_code == 200
     assert "识别意图：logistics_issue" in steps
-    assert "调用工具：query_logistics" in steps
-    assert "调用工具：search_knowledge" in steps
+    assert "调用组合工具：handle_logistics_issue" in steps
+    assert "内部调用：query_logistics" in steps
+    assert "内部调用：search_knowledge" in steps
     assert "保存待确认动作：waiting_confirm" in steps
 
 
@@ -204,6 +322,7 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
         settings.llm_enabled = original_llm_enabled
 
     reply = response.json()["reply"]
+    steps = response.json()["steps"]
     assert response.status_code == 200
     assert "已同时查询订单状态和平台发货政策" in reply
     assert "订单 A101" in reply
@@ -213,6 +332,74 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
     assert "参考来源" in reply
     assert "创建投诉" in reply
     assert "客服主管" in reply
+    assert "执行模式：规则 Agent（本次未调用 LLM）" in steps
+    assert "调用组合工具：handle_order_issue" in steps
+    assert "内部调用：query_order" in steps
+    assert "内部调用：search_knowledge" in steps
+
+
+def test_pending_complaint_does_not_block_normal_order_query():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    user_id = "pytest-pending-then-query-order"
+
+    try:
+        issue_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        query_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "查订单 A101",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert issue_response.status_code == 200
+    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert query_response.status_code == 200
+    assert "订单 A101" in query_response.json()["reply"]
+    assert "已准备好投诉内容" not in query_response.json()["reply"]
+
+
+def test_pending_complaint_does_not_turn_greeting_into_complaint_confirmation():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    user_id = "pytest-pending-then-greeting"
+
+    try:
+        issue_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "我的物流 L101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        greeting_response = client.post(
+            "/chat",
+            json={
+                "user_id": user_id,
+                "message": "你好",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert issue_response.status_code == 200
+    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert greeting_response.status_code == 200
+    assert "已准备好投诉内容" not in greeting_response.json()["reply"]
+    assert "我只能查询订单或物流" in greeting_response.json()["reply"]
 
 
 def test_order_detail_endpoint_returns_order_status():

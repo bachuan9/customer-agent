@@ -19,6 +19,8 @@ def build_messages(user_message: str) -> List[Dict[str, str]]:
                 "你只能根据用户问题选择一个合适的工具，不能自己编造订单、物流或投诉数据。"
                 "如果用户问题同时涉及物流状态和平台政策，例如物流超时、48小时未更新、没发货，"
                 "应优先选择 handle_logistics_issue。"
+                "如果用户问题同时涉及订单状态和平台发货政策，例如订单超时、48小时未发货、还没发货，"
+                "应优先选择 handle_order_issue。"
             ),
         },
         {

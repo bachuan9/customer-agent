@@ -1,6 +1,6 @@
 from app.services.agent import format_llm_tool_selection_reply
 from app.services.tool_registry import list_function_calling_tools
-from app.services.tools import extract_knowledge_keywords, handle_logistics_issue, search_knowledge
+from app.services.tools import extract_knowledge_keywords, handle_logistics_issue, handle_order_issue, search_knowledge
 from app.storage.db import insert_knowledge_article
 
 
@@ -93,6 +93,41 @@ def test_handle_logistics_issue_is_available_as_function_calling_tool():
     names = [tool["function"]["name"] for tool in tools]
 
     assert "handle_logistics_issue" in names
+
+
+def test_handle_order_issue_is_available_as_function_calling_tool():
+    tools = list_function_calling_tools()
+    names = [tool["function"]["name"] for tool in tools]
+
+    assert "handle_order_issue" in names
+
+
+def test_handle_order_issue_combines_order_and_knowledge():
+    result = handle_order_issue("A101", "我的订单 A101 48小时了，怎么还没发货")
+
+    assert result["found"] is True
+    assert result["order_no"] == "A101"
+    assert result["order_status"] == "shipped"
+    assert result["knowledge_found"] is True
+    assert result["suggest_complaint"] is True
+    assert "调用工具：query_order" in result["steps"]
+    assert "调用工具：search_knowledge" in result["steps"]
+
+
+def test_handle_order_issue_template_reply_is_readable():
+    result = handle_order_issue("A101", "我的订单 A101 48小时了，怎么还没发货")
+    reply = format_llm_tool_selection_reply(
+        {
+            "tool_name": "handle_order_issue",
+            "arguments": {"order_no": "A101", "query": "我的订单 A101 48小时了，怎么还没发货"},
+            "tool_result": result,
+            "requires_confirmation": False,
+        }
+    )
+
+    assert "已同时查询订单状态和平台发货政策" in reply
+    assert "订单 A101" in reply
+    assert "确认创建投诉" in reply
 
 
 def test_handle_logistics_issue_combines_logistics_and_knowledge():

@@ -181,6 +181,7 @@ async function login(event) {
     const data = await res.json();
     setAuthToken(data.token);
     applyLoggedInUser(data.user);
+    await loadChatHistory();
     appendBubble("agent", `登录成功：当前身份是 ${data.user.display_name}。`);
   } catch (err) {
     appendBubble("agent", "登录失败，请检查账号或密码。");
@@ -207,6 +208,7 @@ async function logout() {
     currentUser = null;
     loginStatus.textContent = "未登录：当前仍使用下方教学角色。";
     updateKnowledgePermissionUI();
+    await loadChatHistory();
     appendBubble("agent", "已退出登录，后端 token 已失效。");
   }
 }
@@ -312,6 +314,41 @@ function renderAgentSteps(steps = []) {
 function setBubbleReplyWithSteps(bubble, reply, steps = []) {
   const safeReply = escapeHtml(reply || "（无回复）");
   setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}`);
+}
+
+function renderChatHistory(messages = []) {
+  chatBody.innerHTML = "";
+
+  if (!messages.length) {
+    appendBubble(
+      "agent",
+      "你好，我是客服助手。你可以输入“查订单 A101”“查物流 L101”，也可以试试“更新订单 A101 shipped”体验二次确认。"
+    );
+    return;
+  }
+
+  messages.forEach((item) => {
+    const role = item.sender === "user" ? "user" : "agent";
+    const bubble = appendBubble(role, item.message);
+    if (role === "agent" && item.steps?.length) {
+      setBubbleReplyWithSteps(bubble, item.message, item.steps);
+    }
+  });
+}
+
+async function loadChatHistory() {
+  const userId = userIdInput.value.trim() || "user1";
+
+  try {
+    const res = await fetch(`${API_BASE}/chat/history/${encodeURIComponent(userId)}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const messages = await res.json();
+    renderChatHistory(messages);
+  } catch (err) {
+    appendBubble("agent", "聊天历史加载失败，可继续发送新消息。");
+  }
 }
 
 // 4. 表格渲染：把订单、物流、投诉列表渲染成 HTML 表格。
@@ -1518,9 +1555,21 @@ chips.forEach((chip) => {
   });
 });
 
-clearBtn.addEventListener("click", () => {
-  chatBody.innerHTML = "";
-  appendBubble("agent", "聊天已清空，可以继续输入新的问题。");
+clearBtn.addEventListener("click", async () => {
+  const userId = userIdInput.value.trim() || "user1";
+
+  try {
+    const res = await fetch(`${API_BASE}/chat/history/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    chatBody.innerHTML = "";
+    appendBubble("agent", "聊天历史已清空，可以继续输入新的问题。");
+  } catch (err) {
+    appendBubble("agent", "聊天历史清空失败，请确认后端服务正在运行。");
+  }
 });
 
 // 9. 投诉列表查询：渲染投诉记录和每行操作按钮。
@@ -1691,4 +1740,4 @@ knowledgeList.addEventListener("click", (event) => {
 loadComplaintStats();
 loadKnowledgeArticles();
 renderRagDebugExamples();
-loadCurrentUser();
+loadCurrentUser().finally(loadChatHistory);

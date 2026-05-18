@@ -202,6 +202,9 @@ def should_suggest_complaint(message):
     return any(keyword in message for keyword in ESCALATION_SUGGESTION_KEYWORDS)
 
 
+PENDING_COMPLAINT_CONTINUE_INTENTS = {"create_complaint"}
+
+
 # 4. 意图识别：判断用户这句话想做什么。
 def detect_intent(message):
     # 先判断更具体的意图，避免“更新订单”被误判成普通“查订单”
@@ -369,6 +372,14 @@ def format_llm_tool_selection_reply(selection):
         return format_logistics_issue_reply(
             result["tracking_no"],
             result["logistics_result"],
+            result["knowledge_result"],
+            suggest_complaint=result.get("suggest_complaint", False),
+        )
+
+    if tool_name == "handle_order_issue":
+        return format_order_issue_reply(
+            result["order_no"],
+            result["order_result"],
             result["knowledge_result"],
             suggest_complaint=result.get("suggest_complaint", False),
         )
@@ -775,8 +786,32 @@ def handle_cancel_create_complaint(user_id, pending_existing):
     return "已取消创建投诉。"
 
 
-def build_agent_steps(intent, pending_existing=None, pending_after=None, selection=None):
+def build_agent_steps(
+    intent,
+    pending_existing=None,
+    pending_after=None,
+    selection=None,
+    execution_mode="rule_agent",
+    llm_reply_generated=False,
+    llm_fallback_error=None,
+    reply_source="rule_template",
+):
     steps = [f"识别意图：{intent}"]
+
+    if execution_mode == "llm_agent":
+        steps.append("执行模式：LLM Agent（本次调用了 LLM）")
+    elif llm_fallback_error:
+        steps.append("执行模式：规则 Agent（LLM 调用失败后自动降级）")
+        steps.append(f"LLM 降级原因：{llm_fallback_error}")
+    elif execution_mode == "rule_agent":
+        steps.append("执行模式：规则 Agent（本次未调用 LLM）")
+
+    if reply_source == "llm_reply":
+        steps.append("回复来源：LLM 润色生成")
+    elif reply_source == "llm_template_fallback":
+        steps.append("回复来源：LLM 工具结果模板")
+    else:
+        steps.append("回复来源：规则模板")
 
     if intent == "confirm_create_complaint":
         if pending_existing:
@@ -795,8 +830,8 @@ def build_agent_steps(intent, pending_existing=None, pending_after=None, selecti
         return steps
 
     tool_steps = {
-        "order_issue": ["调用工具：query_order", "调用工具：search_knowledge"],
-        "logistics_issue": ["调用工具：query_logistics", "调用工具：search_knowledge"],
+        "order_issue": ["调用组合工具：handle_order_issue", "内部调用：query_order", "内部调用：search_knowledge"],
+        "logistics_issue": ["调用组合工具：handle_logistics_issue", "内部调用：query_logistics", "内部调用：search_knowledge"],
         "query_order": ["调用工具：query_order"],
         "query_logistics": ["调用工具：query_logistics"],
         "search_knowledge": ["调用工具：search_knowledge"],
@@ -809,6 +844,8 @@ def build_agent_steps(intent, pending_existing=None, pending_after=None, selecti
 
     if selection:
         steps.append(f"LLM 选择工具：{selection['tool_name']}")
+        if llm_reply_generated:
+            steps.append("LLM 生成最终回复")
         if selection.get("requires_confirmation"):
             steps.append("保存待确认动作：pending_llm_action")
 
@@ -849,9 +886,8 @@ def handle_intent(message, user_id, intent, pending_existing):
 
     if intent == "order_issue":
         order_no = extract_id(message, "A")
-        order_result = call_tool("query_order", {"order_no": order_no})
-        knowledge_result = call_tool("search_knowledge", {"query": message})
-        if should_suggest_complaint(message):
+        result = call_tool("handle_order_issue", {"order_no": order_no, "query": message})
+        if result.get("suggest_complaint"):
             set_pending_complaint(
                 user_id,
                 {
@@ -864,32 +900,31 @@ def handle_intent(message, user_id, intent, pending_existing):
             )
         return format_order_issue_reply(
             order_no,
-            order_result,
-            knowledge_result,
-            suggest_complaint=should_suggest_complaint(message),
+            result["order_result"],
+            result["knowledge_result"],
+            suggest_complaint=result.get("suggest_complaint", False),
         )
 
     if intent == "logistics_issue":
         tracking_no = extract_id(message, "L")
-        logistics_result = call_tool("query_logistics", {"tracking_no": tracking_no})
-        knowledge_result = call_tool("search_knowledge", {"query": message})
-        if should_suggest_complaint(message):
+        result = call_tool("handle_logistics_issue", {"tracking_no": tracking_no, "query": message})
+        if result.get("suggest_complaint"):
             set_pending_complaint(
                 user_id,
                 {
                     "type": "pending_complaint",
                     "status": "waiting_confirm",
                     "issue_type": "物流异常",
-                    "order_id": logistics_result.get("order_no"),
+                    "order_id": result.get("order_no"),
                     "tracking_no": tracking_no,
                     "reason": message,
                 },
             )
         return format_logistics_issue_reply(
             tracking_no,
-            logistics_result,
-            knowledge_result,
-            suggest_complaint=should_suggest_complaint(message),
+            result["logistics_result"],
+            result["knowledge_result"],
+            suggest_complaint=result.get("suggest_complaint", False),
         )
 
     if intent == "search_knowledge":
@@ -1000,10 +1035,16 @@ def handle_intent(message, user_id, intent, pending_existing):
             return f"投诉解决失败：{exc}"
         return format_complaint_update_reply(result)
 
-    if pending_existing and pending_existing.get("status") == "waiting_confirm":
+    if (
+        pending_existing
+        and pending_existing.get("status") == "waiting_confirm"
+        and intent in PENDING_COMPLAINT_CONTINUE_INTENTS
+    ):
         return "已准备好投诉内容。如需创建投诉，请回复：确认创建投诉。"
 
-    if intent == "create_complaint" or pending_existing:
+    if intent == "create_complaint" or (
+        pending_existing and intent in PENDING_COMPLAINT_CONTINUE_INTENTS
+    ):
         order_id = extract_id(message, "A")
         pending = pending_existing or {"type": "pending_complaint"}
 
@@ -1100,33 +1141,46 @@ def handle_intent(message, user_id, intent, pending_existing):
     return "我只能查询订单或物流，请再说一次。"
 
 
-# 10. Agent 入口：每一次 /chat 请求都会从这里开始。
-def run_agent(req):
+def run_agent_trace(req):
     # 取出用户输入的一句话
     message = req.message
     user_id = req.user_id
     role = req.role
     intent = detect_intent(message)
+    trace = {
+        "intent": intent,
+        "execution_mode": "rule_agent",
+        "selection": None,
+        "llm_reply_generated": False,
+        "llm_fallback_error": None,
+        "reply_source": "rule_template",
+    }
 
     if intent == "confirm_llm_action":
-        return handle_confirm_llm_action(user_id, role)
+        trace["reply"] = handle_confirm_llm_action(user_id, role)
+        return trace
 
     if intent == "confirm_create_complaint":
         pending_existing = get_pending_complaint(user_id)
-        return handle_confirm_create_complaint(user_id, pending_existing)
+        trace["reply"] = handle_confirm_create_complaint(user_id, pending_existing)
+        return trace
 
     if intent == "cancel_create_complaint":
         pending_existing = get_pending_complaint(user_id)
-        return handle_cancel_create_complaint(user_id, pending_existing)
+        trace["reply"] = handle_cancel_create_complaint(user_id, pending_existing)
+        return trace
 
     if intent in {"order_issue", "logistics_issue"}:
         pending_existing = get_pending_complaint(user_id)
-        return handle_intent(message, user_id, intent, pending_existing)
+        trace["reply"] = handle_intent(message, user_id, intent, pending_existing)
+        return trace
 
     # 如果开启 LLM，就先让大模型选择工具；失败时退回下面的规则 Agent。
     if settings.llm_enabled:
         try:
             selection = run_llm_tool_selection(message)
+            trace["execution_mode"] = "llm_agent"
+            trace["selection"] = selection
             print(f"[DEBUG] LLM selected tool: {selection['tool_name']} {selection['arguments']}")
             if selection.get("requires_confirmation"):
                 print("[DEBUG] LLM selected mutating tool; confirmation required")
@@ -1138,16 +1192,26 @@ def run_agent(req):
                         "arguments": selection["arguments"],
                     },
                 )
-                return format_llm_tool_selection_reply(selection)
+                trace["reply"] = format_llm_tool_selection_reply(selection)
+                trace["reply_source"] = "llm_template_fallback"
+                return trace
             try:
                 reply = generate_llm_reply(message, selection)
+                trace["llm_reply_generated"] = True
+                trace["reply_source"] = "llm_reply"
                 print("[DEBUG] LLM generated final reply")
-                return reply
+                trace["reply"] = reply
+                return trace
             except (LLMClientError, LLMReplyError) as exc:
                 print(f"[DEBUG] LLM reply fallback to template: {exc}")
-            return format_llm_tool_selection_reply(selection)
+            trace["reply"] = format_llm_tool_selection_reply(selection)
+            trace["reply_source"] = "llm_template_fallback"
+            return trace
         except (LLMClientError, LLMAgentError, ValueError) as exc:
             print(f"[DEBUG] LLM fallback to rule agent: {exc}")
+            trace["execution_mode"] = "rule_agent"
+            trace["selection"] = None
+            trace["llm_fallback_error"] = str(exc)
 
     # 用户明确发起投诉时，重置该用户的未完成状态
     if intent == "create_complaint":
@@ -1160,7 +1224,13 @@ def run_agent(req):
     pending_existing = get_pending_complaint(user_id)
     print(f"[DEBUG] pending_existing={pending_existing}")
 
-    return handle_intent(message, user_id, intent, pending_existing)
+    trace["reply"] = handle_intent(message, user_id, intent, pending_existing)
+    return trace
+
+
+# 10. Agent 入口：每一次 /chat 请求都会从这里开始。
+def run_agent(req):
+    return run_agent_trace(req)["reply"]
 
 
 def run_agent_with_steps(req):
@@ -1169,7 +1239,17 @@ def run_agent_with_steps(req):
     intent = detect_intent(message)
     pending_before = get_pending_complaint(user_id)
 
-    reply = run_agent(req)
+    trace = run_agent_trace(req)
+    reply = trace["reply"]
     pending_after = get_pending_complaint(user_id)
-    steps = build_agent_steps(intent, pending_existing=pending_before, pending_after=pending_after)
+    steps = build_agent_steps(
+        trace["intent"],
+        pending_existing=pending_before,
+        pending_after=pending_after,
+        selection=trace.get("selection"),
+        execution_mode=trace.get("execution_mode", "rule_agent"),
+        llm_reply_generated=trace.get("llm_reply_generated", False),
+        llm_fallback_error=trace.get("llm_fallback_error"),
+        reply_source=trace.get("reply_source", "rule_template"),
+    )
     return {"reply": reply, "steps": steps}

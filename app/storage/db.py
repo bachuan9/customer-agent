@@ -85,6 +85,7 @@ def init_db() -> None:
     init_logistics_table()
     init_knowledge_articles_table()
     init_users_table()
+    init_chat_messages_table()
     ensure_default_users()
 
 
@@ -425,6 +426,90 @@ def clear_session_messages(user_id: str) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM session_messages WHERE user_id = ?", (user_id,))
         conn.commit()
+
+
+# 8. 聊天记录表：保存用户和 Agent 的真实聊天历史。
+def init_chat_messages_table() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                sender TEXT NOT NULL,
+                message TEXT NOT NULL,
+                steps TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor = conn.execute("PRAGMA table_info(chat_messages)")
+        existing_columns = [row[1] for row in cursor.fetchall()]
+        if "steps" not in existing_columns:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN steps TEXT DEFAULT NULL")
+        conn.commit()
+
+
+def save_chat_message(
+    user_id: str,
+    sender: str,
+    message: str,
+    steps: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    steps_text = json.dumps(steps or [], ensure_ascii=False)
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO chat_messages (user_id, sender, message, steps, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, sender, message, steps_text, created_at),
+        )
+        conn.commit()
+        message_id = cursor.lastrowid
+
+    return {
+        "id": message_id,
+        "user_id": user_id,
+        "sender": sender,
+        "message": message,
+        "steps": steps or [],
+        "created_at": created_at,
+    }
+
+
+def fetch_chat_messages(user_id: str, limit: int = 50) -> List[Dict[str, str]]:
+    safe_limit = max(1, min(limit, 200))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, user_id, sender, message, steps, created_at
+            FROM chat_messages
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, safe_limit),
+        ).fetchall()
+
+    results = []
+    for row in reversed(rows):
+        results.append(
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "sender": row["sender"],
+                "message": row["message"],
+                "steps": json.loads(row["steps"] or "[]"),
+                "created_at": row["created_at"],
+            }
+        )
+    return results
+
+
+def clear_chat_messages(user_id: str) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount
 
 
 def init_tool_call_logs_table() -> None:

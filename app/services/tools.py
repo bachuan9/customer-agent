@@ -57,6 +57,16 @@ LOGISTICS_ISSUE_SUGGESTION_KEYWORDS = {
     "未更新",
     "延迟",
 }
+ORDER_ISSUE_SUGGESTION_KEYWORDS = {
+    "48小时",
+    "48 小时",
+    "超时",
+    "没发货",
+    "未发货",
+    "不发货",
+    "还没发货",
+    "延迟",
+}
 
 from app.storage.db import (
     ALLOWED_COMPLAINT_PRIORITIES,
@@ -104,6 +114,32 @@ def query_logistics(tracking_no: str) -> Dict[str, Any]:
 
 def should_suggest_logistics_complaint(query: str) -> bool:
     return any(keyword in query for keyword in LOGISTICS_ISSUE_SUGGESTION_KEYWORDS)
+
+
+def should_suggest_order_complaint(query: str) -> bool:
+    return any(keyword in query for keyword in ORDER_ISSUE_SUGGESTION_KEYWORDS)
+
+
+def handle_order_issue(order_no: str, query: str) -> Dict[str, Any]:
+    order_result = query_order(order_no)
+    knowledge_result = search_knowledge(query)
+    suggest_complaint = should_suggest_order_complaint(query)
+
+    return {
+        "found": order_result.get("found", False),
+        "order_no": order_no,
+        "order_status": order_result.get("status"),
+        "order_result": order_result,
+        "knowledge_result": knowledge_result,
+        "knowledge_found": knowledge_result.get("found", False),
+        "knowledge_sources": knowledge_result.get("sources", []),
+        "suggest_complaint": suggest_complaint,
+        "steps": [
+            "调用工具：query_order",
+            "调用工具：search_knowledge",
+            "判断是否需要建议创建投诉",
+        ],
+    }
 
 
 def handle_logistics_issue(tracking_no: str, query: str) -> Dict[str, Any]:
