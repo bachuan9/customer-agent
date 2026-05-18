@@ -140,6 +140,7 @@ TOOL_REGISTRY = [
             "status": "可选，投诉状态：pending、processing、resolved",
             "priority": "可选，投诉优先级：low、medium、high",
             "handler": "可选，处理人",
+            "follow_up_status": "可选，跟进状态，例如 需要跟进",
         },
         "returns": {
             "items": "投诉记录列表",

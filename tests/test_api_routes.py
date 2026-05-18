@@ -466,6 +466,90 @@ def test_chat_endpoint_confirms_order_issue_complaint_as_high_priority():
     )
 
 
+def test_chat_endpoint_complaint_detail_includes_follow_up_reason():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-complaint-detail-follow-up",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-complaint-detail-follow-up",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-complaint-detail-follow-up")
+        detail_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-complaint-detail-follow-up",
+                "message": f"查看投诉 {complaint['id']}",
+                "role": "agent",
+            },
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert detail_response.status_code == 200
+    reply = detail_response.json()["reply"]
+    assert "投诉详情" in reply
+    assert "跟进状态：高优先级请尽快处理" in reply
+    assert "跟进原因：高优先级投诉建议 24 小时内完成处理。" in reply
+
+
+def test_complaints_endpoint_filters_follow_up_queue():
+    from app.storage.db import get_connection
+
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-follow-up-queue",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-follow-up-queue",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-follow-up-queue")
+        numeric_id = int(complaint["id"].split("-")[1])
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE complaints SET created_at = ?, updated_at = NULL WHERE id = ?",
+                ("2020-01-01T00:00:00Z", numeric_id),
+            )
+            conn.commit()
+
+        response = client.get("/complaints?follow_up_status=%E9%9C%80%E8%A6%81%E8%B7%9F%E8%BF%9B")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert response.status_code == 200
+    items = response.json()
+    assert any(item["id"] == complaint["id"] for item in items)
+    assert all(item["follow_up_status"] == "需要跟进" for item in items)
+
+
 def test_complaints_endpoint_filters_manager_high_priority_queue():
     original_llm_enabled = settings.llm_enabled
     settings.llm_enabled = False
@@ -613,6 +697,7 @@ def test_resolved_manager_complaint_leaves_processing_queue():
     resolved_complaint = detail_response.json()["complaint"]
     assert resolved_complaint["status"] == "resolved"
     assert resolved_complaint["resolved_at"] is not None
+    assert resolved_complaint["follow_up_status"] == "已解决"
 
 
 def test_complaint_stats_includes_manager_processing_count():
@@ -654,6 +739,49 @@ def test_complaint_stats_includes_manager_processing_count():
     stats = stats_response.json()
     assert "manager_processing" in stats
     assert stats["manager_processing"] >= 1
+
+
+def test_complaint_stats_includes_need_follow_up_count():
+    from app.storage.db import get_connection
+
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-follow-up-stats",
+                "message": "我的订单 A101 48小时了，怎么还没发货",
+                "role": "agent",
+            },
+        )
+        client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-follow-up-stats",
+                "message": "确认创建投诉",
+                "role": "agent",
+            },
+        )
+        complaints = client.get("/complaints").json()
+        complaint = next(item for item in complaints if item["user_id"] == "pytest-follow-up-stats")
+        numeric_id = int(complaint["id"].split("-")[1])
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE complaints SET created_at = ?, updated_at = NULL WHERE id = ?",
+                ("2020-01-01T00:00:00Z", numeric_id),
+            )
+            conn.commit()
+
+        stats_response = client.get("/complaints/stats")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert stats_response.status_code == 200
+    stats = stats_response.json()
+    assert "need_follow_up" in stats
+    assert stats["need_follow_up"] >= 1
 
 
 def test_chat_endpoint_cancels_pending_complaint_when_llm_disabled():

@@ -420,8 +420,15 @@ def list_complaints(
     status: Optional[str] = None,
     priority: Optional[str] = None,
     handler: Optional[str] = None,
+    follow_up_status: Optional[str] = None,
 ) -> List[Dict[str, str]]:
-    return fetch_complaints(user_id=user_id, status=status, priority=priority, handler=handler)
+    return fetch_complaints(
+        user_id=user_id,
+        status=status,
+        priority=priority,
+        handler=handler,
+        follow_up_status=follow_up_status,
+    )
 
 
 def get_complaint_detail(complaint_id: str) -> Optional[Dict[str, Any]]:

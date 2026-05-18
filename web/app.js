@@ -15,6 +15,7 @@ const loginStatus = document.getElementById("loginStatus");
 const statusInput = document.getElementById("status");
 const complaintsBtn = document.getElementById("complaintsBtn");
 const managerQueueBtn = document.getElementById("managerQueueBtn");
+const followUpQueueBtn = document.getElementById("followUpQueueBtn");
 const ordersBtn = document.getElementById("ordersBtn");
 const logisticsBtn = document.getElementById("logisticsBtn");
 const chatSessionsBtn = document.getElementById("chatSessionsBtn");
@@ -218,13 +219,13 @@ async function logout() {
 function updateStatsCards(stats) {
   if (!stats) return;
   if (statsTotal) statsTotal.textContent = stats.total;
-  if (statsPending) statsPending.textContent = stats.pending;
+  if (statsPending) statsPending.textContent = stats.need_follow_up;
   if (statsHighPriority) statsHighPriority.textContent = stats.manager_processing;
   if (statsStatusText) {
     statsStatusText.textContent = `处理中 ${stats.processing} / 已解决 ${stats.resolved}`;
   }
   if (statsPendingText) {
-    statsPendingText.textContent = stats.pending > 0 ? "需要客服优先跟进" : "当前没有待处理投诉";
+    statsPendingText.textContent = stats.need_follow_up > 0 ? "请优先处理这些投诉" : "当前没有需要跟进投诉";
   }
   if (statsHighText) {
     statsHighText.textContent = stats.manager_processing > 0 ? "主管有重点工单处理中" : "主管暂无处理中重点工单";
@@ -1742,6 +1743,8 @@ function renderComplaintTable(data) {
       { key: "user_id", label: "用户ID" },
       { key: "status", label: "状态" },
       { key: "priority", label: "优先级" },
+      { key: "follow_up_status", label: "跟进状态" },
+      { key: "follow_up_reason", label: "跟进原因" },
       { key: "handler", label: "处理人" },
       { key: "content", label: "内容" },
       { key: "created_at", label: "创建时间" },
@@ -1775,6 +1778,8 @@ function renderComplaintTable(data) {
       user_id: item.user_id,
       status: item.status,
       priority: item.priority,
+      follow_up_status: item.follow_up_status || "正常",
+      follow_up_reason: item.follow_up_reason || "暂无",
       handler: item.handler || "暂未分配",
       content: item.content,
       created_at: item.created_at,
@@ -1819,6 +1824,14 @@ managerQueueBtn.addEventListener("click", async () => {
     params: { priority: "high", handler: "客服主管", status: "processing" },
     loadingText: "正在查询主管待处理工单...",
     emptyText: "暂无客服主管正在处理的高优先级投诉。",
+  });
+});
+
+followUpQueueBtn.addEventListener("click", async () => {
+  await loadComplaints({
+    params: { follow_up_status: "需要跟进" },
+    loadingText: "正在查询需要跟进的投诉...",
+    emptyText: "暂无需要跟进的投诉。",
   });
 });
 

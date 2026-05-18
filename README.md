@@ -6,7 +6,7 @@
 
 - 订单：创建、列表、查询、更新状态。
 - 物流：创建、列表、查询、更新状态。
-- 投诉工单：创建、列表、筛选、详情、状态流转、优先级、处理人分配。
+- 投诉工单：创建、列表、筛选、详情、状态流转、优先级、处理人分配、跟进状态和原因提醒、需要跟进队列和统计。
 - 投诉备注：添加、查看、修改、删除。
 - 知识库/RAG：支持 Markdown 知识库和数据库知识库，Agent 可检索客服政策并展示命中原因。
 - LLM Agent：支持 DeepSeek Function Calling 选择工具，并支持订单、物流、知识库多工具协作和客服处理建议。
@@ -142,7 +142,7 @@ node --check web\app.js
 当前完整检查应看到：
 
 ```text
-pytest: 90 passed
+pytest: 94 passed
 node --check web/app.js: passed
 python -m compileall app: passed
 ```

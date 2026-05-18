@@ -3,7 +3,7 @@ import json
 import hashlib
 import secrets
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 # 1. 业务规则常量：限制订单、物流、投诉可以使用的状态和优先级。
@@ -17,6 +17,8 @@ ALLOWED_STATUS_TRANSITIONS = {
 }
 ALLOWED_ORDER_STATUSES = {"pending", "shipped", "delivered"}
 ALLOWED_USER_ROLES = {"agent", "manager"}
+HIGH_PRIORITY_FOLLOW_UP_HOURS = 24
+NORMAL_FOLLOW_UP_HOURS = 48
 
 
 # 2. 数据库连接：确定 SQLite 文件位置，并创建连接。
@@ -977,6 +979,50 @@ def delete_knowledge_article(article_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+def parse_utc_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def build_complaint_follow_up_status(complaint: Dict[str, str]) -> Dict[str, str]:
+    if complaint["status"] == "resolved":
+        return {
+            "follow_up_status": "已解决",
+            "follow_up_reason": "投诉已经解决，无需继续跟进。",
+        }
+
+    base_time = parse_utc_datetime(complaint.get("updated_at")) or parse_utc_datetime(complaint.get("created_at"))
+    if base_time is None:
+        return {
+            "follow_up_status": "需要跟进",
+            "follow_up_reason": "投诉时间缺失，建议人工确认处理进度。",
+        }
+
+    elapsed_hours = (datetime.now(timezone.utc) - base_time).total_seconds() / 3600
+    limit_hours = HIGH_PRIORITY_FOLLOW_UP_HOURS if complaint["priority"] == "high" else NORMAL_FOLLOW_UP_HOURS
+
+    if elapsed_hours >= limit_hours:
+        return {
+            "follow_up_status": "需要跟进",
+            "follow_up_reason": f"已超过 {limit_hours} 小时未完成处理。",
+        }
+
+    if complaint["priority"] == "high":
+        return {
+            "follow_up_status": "高优先级请尽快处理",
+            "follow_up_reason": f"高优先级投诉建议 {limit_hours} 小时内完成处理。",
+        }
+
+    return {
+        "follow_up_status": "正常",
+        "follow_up_reason": f"未超过 {limit_hours} 小时跟进阈值。",
+    }
+
+
 # 8. 投诉工单：创建、查询、筛选投诉记录。
 def insert_complaint(
     user_id: str,
@@ -1002,6 +1048,7 @@ def fetch_complaints(
     status: Optional[str] = None,
     priority: Optional[str] = None,
     handler: Optional[str] = None,
+    follow_up_status: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     query = "SELECT id, user_id, content, created_at, status, priority, handler, updated_at, resolved_at FROM complaints"
     conditions = []
@@ -1027,7 +1074,7 @@ def fetch_complaints(
 
     results = []
     for row in rows:
-        results.append({
+        complaint = {
             "id": f"C-{row['id']:04d}",
             "user_id": row["user_id"],
             "content": row["content"],
@@ -1037,7 +1084,11 @@ def fetch_complaints(
             "handler": row["handler"],
             "updated_at": row["updated_at"],
             "resolved_at": row["resolved_at"]
-        })
+        }
+        complaint.update(build_complaint_follow_up_status(complaint))
+        if follow_up_status and complaint["follow_up_status"] != follow_up_status:
+            continue
+        results.append(complaint)
     return results
 
 
@@ -1052,6 +1103,7 @@ def fetch_complaint_stats() -> Dict[str, int]:
             "SELECT COUNT(*) AS count FROM complaints WHERE priority = ? AND handler = ? AND status = ?",
             ("high", "客服主管", "processing"),
         ).fetchone()["count"]
+    need_follow_up = len(fetch_complaints(follow_up_status="需要跟进"))
 
     return {
         "total": total,
@@ -1060,6 +1112,7 @@ def fetch_complaint_stats() -> Dict[str, int]:
         "resolved": resolved,
         "high_priority": high_priority,
         "manager_processing": manager_processing,
+        "need_follow_up": need_follow_up,
     }
 
 
@@ -1077,7 +1130,7 @@ def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
     if row is None:
         return None
 
-    return {
+    complaint = {
         "id": f"C-{row['id']:04d}",
         "user_id": row["user_id"],
         "content": row["content"],
@@ -1088,6 +1141,8 @@ def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
         "updated_at": row["updated_at"],
         "resolved_at": row["resolved_at"],
     }
+    complaint.update(build_complaint_follow_up_status(complaint))
+    return complaint
 
 
 # 10. 投诉更新：更新状态、优先级、处理人和时间字段。

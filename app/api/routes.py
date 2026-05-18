@@ -431,15 +431,22 @@ def delete_chat_history(user_id: str, authorization: str = Header(default=None))
     return {"deleted": deleted, "session_cleared": True}
 
 
-# 4. 投诉列表接口：支持按 user_id、status、priority、handler 筛选投诉。
+# 4. 投诉列表接口：支持按 user_id、status、priority、handler、follow_up_status 筛选投诉。
 @router.get("/complaints")
 def complaints(
     user_id: str = None,
     status: str = None,
     priority: str = None,
     handler: str = None,
+    follow_up_status: str = None,
 ) -> list:
-    return list_complaints(user_id=user_id, status=status, priority=priority, handler=handler)
+    return list_complaints(
+        user_id=user_id,
+        status=status,
+        priority=priority,
+        handler=handler,
+        follow_up_status=follow_up_status,
+    )
 
 
 @router.get("/complaints/stats")

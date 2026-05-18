@@ -95,6 +95,7 @@
               <button id="logisticsBtn" class="ghost">物流列表</button>
               <button id="complaintsBtn" class="ghost">投诉记录</button>
               <button id="managerQueueBtn" class="ghost">主管待处理</button>
+              <button id="followUpQueueBtn" class="ghost">需要跟进</button>
               <button id="chatSessionsBtn" class="ghost">会话列表</button>
               <button id="knowledgeBtn" class="ghost">知识库</button>
               <button id="toolLogsBtn" class="ghost">工具日志</button>
@@ -173,9 +174,9 @@
               <p id="statsStatusText">pending / processing / resolved</p>
             </article>
             <article class="summary-card warning">
-              <span>待处理队列</span>
+              <span>需要跟进</span>
               <strong id="statsPending">-</strong>
-              <p id="statsPendingText">需要客服优先跟进</p>
+              <p id="statsPendingText">超过 SLA 或数据异常</p>
             </article>
             <article class="summary-card">
               <span>主管待处理</span>
@@ -294,6 +295,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=20260518-manager-processing-stats-v1"></script>
+    <script src="./app.js?v=20260518-follow-up-stats-v1"></script>
   </body>
 </html>

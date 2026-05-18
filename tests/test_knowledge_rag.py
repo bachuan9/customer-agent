@@ -8,7 +8,7 @@ from app.services.tools import (
     query_logistics_by_order,
     search_knowledge,
 )
-from app.storage.db import get_complaint_by_id, insert_knowledge_article
+from app.storage.db import get_complaint_by_id, get_connection, insert_knowledge_article
 
 
 def test_search_knowledge_finds_return_policy_sections():
@@ -111,6 +111,24 @@ def test_create_complaint_supports_priority_and_handler():
     assert result["status"] == "created"
     assert complaint["priority"] == "high"
     assert complaint["handler"] == "客服主管"
+    assert complaint["follow_up_status"] == "高优先级请尽快处理"
+    assert "24 小时" in complaint["follow_up_reason"]
+
+
+def test_old_high_priority_complaint_needs_follow_up():
+    result = create_complaint("pytest-old-priority-user", "很久没有处理的高风险投诉", priority="high", handler="客服主管")
+    complaint_id = int(result["complaint_id"].split("-")[1])
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE complaints SET created_at = ?, updated_at = NULL WHERE id = ?",
+            ("2020-01-01T00:00:00Z", complaint_id),
+        )
+        conn.commit()
+
+    complaint = get_complaint_by_id(result["complaint_id"])
+
+    assert complaint["follow_up_status"] == "需要跟进"
+    assert "超过 24 小时" in complaint["follow_up_reason"]
 
 
 def test_handle_order_issue_is_available_as_function_calling_tool():

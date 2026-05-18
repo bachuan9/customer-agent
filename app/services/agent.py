@@ -321,6 +321,8 @@ def format_complaint_detail_reply(result):
         f"用户：{complaint['user_id']}",
         f"状态：{complaint['status']}",
         f"优先级：{complaint['priority']}",
+        f"跟进状态：{complaint.get('follow_up_status') or '正常'}",
+        f"跟进原因：{complaint.get('follow_up_reason') or '暂无'}",
         f"处理人：{handler}",
         f"内容：{complaint['content']}",
         f"创建时间：{complaint['created_at']}",
@@ -601,17 +603,18 @@ def create_complaint(user_id, content, priority="medium", handler=None):
     return result["complaint_id"]
 
 
-def list_complaints(user_id=None, status=None, priority=None, handler=None):
+def list_complaints(user_id=None, status=None, priority=None, handler=None, follow_up_status=None):
     # 查询历史投诉，user_id 为空时返回全部
     return list_complaints_with_filters(
         user_id=user_id,
         status=status,
         priority=priority,
         handler=handler,
+        follow_up_status=follow_up_status,
     )
 
 
-def list_complaints_with_filters(user_id=None, status=None, priority=None, handler=None):
+def list_complaints_with_filters(user_id=None, status=None, priority=None, handler=None, follow_up_status=None):
     arguments = {}
     if user_id is not None:
         arguments["user_id"] = user_id
@@ -621,6 +624,8 @@ def list_complaints_with_filters(user_id=None, status=None, priority=None, handl
         arguments["priority"] = priority
     if handler is not None:
         arguments["handler"] = handler
+    if follow_up_status is not None:
+        arguments["follow_up_status"] = follow_up_status
     return call_tool("list_complaints", arguments)
 
 
@@ -636,6 +641,8 @@ def format_complaint_list_reply(items, filters=None):
         filter_text_parts.append(f"优先级={filters['priority']}")
     if filters.get("handler"):
         filter_text_parts.append(f"处理人={filters['handler']}")
+    if filters.get("follow_up_status"):
+        filter_text_parts.append(f"跟进状态={filters['follow_up_status']}")
     title = "投诉列表"
     if filter_text_parts:
         title += "（" + "，".join(filter_text_parts) + "）"
