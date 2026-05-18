@@ -11,6 +11,7 @@ from app.services.tools import (
     list_complaint_notes,
     list_complaints,
     query_logistics,
+    query_logistics_by_order,
     query_order,
     search_knowledge,
     update_complaint,
@@ -64,6 +65,20 @@ TOOL_REGISTRY = [
         "mutates_data": False,
     },
     {
+        "name": "query_logistics_by_order",
+        "description": "根据订单号查询关联物流状态",
+        "parameters": {
+            "order_no": "订单号，例如 A101",
+        },
+        "returns": {
+            "found": "是否找到关联物流",
+            "tracking_no": "物流单号",
+            "order_no": "订单号",
+            "status": "物流状态",
+        },
+        "mutates_data": False,
+    },
+    {
         "name": "handle_logistics_issue",
         "description": "处理物流异常问题，会同时查询物流状态和知识库政策，并判断是否建议创建投诉",
         "parameters": {
@@ -77,13 +92,14 @@ TOOL_REGISTRY = [
             "logistics_status": "物流状态",
             "knowledge_found": "是否找到相关政策",
             "suggest_complaint": "是否建议创建投诉",
+            "agent_suggestion": "基于物流和知识库结果生成的客服处理建议",
             "steps": "组合工具内部执行步骤",
         },
         "mutates_data": False,
     },
     {
         "name": "handle_order_issue",
-        "description": "处理订单发货异常问题，会同时查询订单状态和知识库政策，并判断是否建议创建投诉",
+        "description": "处理订单发货异常问题，会同时查询订单状态、关联物流状态和知识库政策，并判断是否建议创建投诉",
         "parameters": {
             "order_no": "订单号，例如 A101",
             "query": "用户关于订单发货异常的完整问题",
@@ -92,8 +108,11 @@ TOOL_REGISTRY = [
             "found": "是否找到订单",
             "order_no": "订单号",
             "order_status": "订单状态",
+            "tracking_no": "关联物流单号",
+            "logistics_status": "关联物流状态",
             "knowledge_found": "是否找到相关政策",
             "suggest_complaint": "是否建议创建投诉",
+            "agent_suggestion": "基于订单、物流和知识库结果生成的客服处理建议",
             "steps": "组合工具内部执行步骤",
         },
         "mutates_data": False,
@@ -104,6 +123,8 @@ TOOL_REGISTRY = [
         "parameters": {
             "user_id": "用户 ID",
             "content": "投诉内容",
+            "priority": "可选，投诉优先级：low、medium、high",
+            "handler": "可选，处理人，例如 客服主管",
         },
         "returns": {
             "complaint_id": "投诉编号",
@@ -247,6 +268,7 @@ TOOL_REGISTRY = [
 TOOL_FUNCTIONS = {
     "query_order": query_order,
     "query_logistics": query_logistics,
+    "query_logistics_by_order": query_logistics_by_order,
     "handle_logistics_issue": handle_logistics_issue,
     "handle_order_issue": handle_order_issue,
     "create_complaint": create_complaint,

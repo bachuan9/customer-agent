@@ -9,8 +9,9 @@
 - 投诉工单：创建、列表、筛选、详情、状态流转、优先级、处理人分配。
 - 投诉备注：添加、查看、修改、删除。
 - 知识库/RAG：支持 Markdown 知识库和数据库知识库，Agent 可检索客服政策并展示命中原因。
-- LLM Agent：支持 DeepSeek Function Calling 选择工具。
+- LLM Agent：支持 DeepSeek Function Calling 选择工具，并支持订单、物流、知识库多工具协作和客服处理建议。
 - 人工确认：写操作先进入待确认状态，用户确认后才执行。
+- 智能优先级：订单/物流异常确认创建投诉时自动标记高优先级，并分配给客服主管。
 - RBAC 权限：普通客服和主管权限不同。
 - 用户管理：主管可以查看用户、新增用户、修改用户角色。
 - 审计日志：记录登录、用户管理、知识库维护等后台操作。
@@ -139,7 +140,7 @@ node --check web\app.js
 当前完整检查应看到：
 
 ```text
-pytest: 82 passed
+pytest: 86 passed
 node --check web/app.js: passed
 python -m compileall app: passed
 ```

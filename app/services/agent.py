@@ -373,6 +373,7 @@ def format_llm_tool_selection_reply(selection):
             result["tracking_no"],
             result["logistics_result"],
             result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
             suggest_complaint=result.get("suggest_complaint", False),
         )
 
@@ -380,7 +381,9 @@ def format_llm_tool_selection_reply(selection):
         return format_order_issue_reply(
             result["order_no"],
             result["order_result"],
+            result.get("logistics_result", {}),
             result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
             suggest_complaint=result.get("suggest_complaint", False),
         )
 
@@ -441,7 +444,13 @@ def format_llm_tool_selection_reply(selection):
     return "工具已执行完成。"
 
 
-def format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result, suggest_complaint=False):
+def format_logistics_issue_reply(
+    tracking_no,
+    logistics_result,
+    knowledge_result,
+    agent_suggestion=None,
+    suggest_complaint=False,
+):
     lines = ["已同时查询物流状态和平台政策。"]
 
     if logistics_result.get("error"):
@@ -459,14 +468,25 @@ def format_logistics_issue_reply(tracking_no, logistics_result, knowledge_result
         suggestion="建议您先安抚用户，并联系仓库或承运商核实发货/更新情况；如果确认超时，可继续为用户创建投诉或升级处理。",
         fallback="暂未在知识库中找到对应的物流异常规则，建议先联系仓库或承运商进一步核实。",
     )
+    if agent_suggestion:
+        lines.append(f"客服处理建议：{agent_suggestion}")
     if suggest_complaint:
         lines.append("如果用户希望继续处理，可以回复“确认创建投诉”，为用户创建投诉并升级给客服主管跟进。")
 
     return "\n".join(lines)
 
 
-def format_order_issue_reply(order_no, order_result, knowledge_result, suggest_complaint=False):
+def format_order_issue_reply(
+    order_no,
+    order_result,
+    logistics_result=None,
+    knowledge_result=None,
+    agent_suggestion=None,
+    suggest_complaint=False,
+):
     lines = ["已同时查询订单状态和平台发货政策。"]
+    logistics_result = logistics_result or {}
+    knowledge_result = knowledge_result or {}
 
     if order_result.get("error"):
         lines.append(format_tool_error(order_result))
@@ -476,6 +496,14 @@ def format_order_issue_reply(order_no, order_result, knowledge_result, suggest_c
     else:
         lines.append(f"我暂时没有查到订单 {order_no} 的记录，建议先核对订单号是否正确。")
 
+    if logistics_result.get("error"):
+        lines.append(format_tool_error(logistics_result))
+    elif logistics_result.get("found"):
+        label = LOGISTICS_STATUS_LABELS.get(logistics_result["status"], logistics_result["status"])
+        lines.append(f"该订单关联物流 {logistics_result['tracking_no']} 当前状态是：{label}。")
+    else:
+        lines.append("暂未查到该订单关联的物流记录，建议继续核实是否已生成物流单。")
+
     append_issue_knowledge_reply(
         lines,
         knowledge_result,
@@ -483,6 +511,8 @@ def format_order_issue_reply(order_no, order_result, knowledge_result, suggest_c
         suggestion="建议您先安抚用户，并核实订单是否属于预售、定制、大促或仓库延迟场景；如果确认超时，可继续为用户创建投诉或升级处理。",
         fallback="暂未在知识库中找到对应的发货规则，建议先联系仓库进一步核实。",
     )
+    if agent_suggestion:
+        lines.append(f"客服处理建议：{agent_suggestion}")
     if suggest_complaint:
         lines.append("如果用户希望继续处理，可以回复“确认创建投诉”，为用户创建投诉并升级给客服主管跟进。")
 
@@ -558,9 +588,12 @@ def clean_reason(reason, order_id):
     return cleaned.strip(" ：:-")
 
 
-def create_complaint(user_id, content):
+def create_complaint(user_id, content, priority="medium", handler=None):
     # 保存到数据库并返回投诉编号
-    result = call_tool("create_complaint", {"user_id": user_id, "content": content})
+    result = call_tool(
+        "create_complaint",
+        {"user_id": user_id, "content": content, "priority": priority, "handler": handler},
+    )
     if result.get("error"):
         return format_tool_error(result)
     return result["complaint_id"]
@@ -777,9 +810,14 @@ def handle_confirm_create_complaint(user_id, pending_existing):
         return "当前没有待确认创建的投诉，请先描述订单或物流异常。"
 
     content = build_issue_complaint_content(pending_existing)
-    complaint_id = create_complaint(user_id, content)
+    priority = pending_existing.get("priority", "medium")
+    handler = pending_existing.get("handler")
+    complaint_id = create_complaint(user_id, content, priority=priority, handler=handler)
     MEMORY.clear(user_id)
-    return f"已为用户创建投诉，编号 {complaint_id}"
+    reply = f"已为用户创建投诉，编号 {complaint_id}。"
+    reply += f"\n优先级：{priority}。"
+    reply += f"\n处理人：{handler or '暂未分配'}。"
+    return reply
 
 
 def handle_cancel_create_complaint(user_id, pending_existing):
@@ -834,8 +872,19 @@ def build_agent_steps(
         return steps
 
     tool_steps = {
-        "order_issue": ["调用组合工具：handle_order_issue", "内部调用：query_order", "内部调用：search_knowledge"],
-        "logistics_issue": ["调用组合工具：handle_logistics_issue", "内部调用：query_logistics", "内部调用：search_knowledge"],
+        "order_issue": [
+            "调用组合工具：handle_order_issue",
+            "内部调用：query_order",
+            "内部调用：query_logistics_by_order",
+            "内部调用：search_knowledge",
+            "生成客服处理建议",
+        ],
+        "logistics_issue": [
+            "调用组合工具：handle_logistics_issue",
+            "内部调用：query_logistics",
+            "内部调用：search_knowledge",
+            "生成客服处理建议",
+        ],
         "query_order": ["调用工具：query_order"],
         "query_logistics": ["调用工具：query_logistics"],
         "search_knowledge": ["调用工具：search_knowledge"],
@@ -900,12 +949,16 @@ def handle_intent(message, user_id, intent, pending_existing):
                     "issue_type": "订单异常",
                     "order_id": order_no,
                     "reason": message,
+                    "priority": "high",
+                    "handler": "客服主管",
                 },
             )
         return format_order_issue_reply(
             order_no,
             result["order_result"],
+            result.get("logistics_result", {}),
             result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
             suggest_complaint=result.get("suggest_complaint", False),
         )
 
@@ -922,12 +975,15 @@ def handle_intent(message, user_id, intent, pending_existing):
                     "order_id": result.get("order_no"),
                     "tracking_no": tracking_no,
                     "reason": message,
+                    "priority": "high",
+                    "handler": "客服主管",
                 },
             )
         return format_logistics_issue_reply(
             tracking_no,
             result["logistics_result"],
             result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
             suggest_complaint=result.get("suggest_complaint", False),
         )
 
@@ -1085,7 +1141,12 @@ def handle_intent(message, user_id, intent, pending_existing):
         # 信息齐全，创建投诉
         content = f"订单号:{pending['order_id']} 原因:{pending['reason']}"
         print(f"[DEBUG] Creating complaint - pending={pending}, content={content}")
-        complaint_id = create_complaint(user_id, content)
+        complaint_id = create_complaint(
+            user_id,
+            content,
+            priority=pending.get("priority", "medium"),
+            handler=pending.get("handler"),
+        )
         MEMORY.clear(user_id)
         return f"已收到投诉，编号 {complaint_id}"
 

@@ -1,7 +1,14 @@
 from app.services.agent import format_llm_tool_selection_reply
 from app.services.tool_registry import list_function_calling_tools
-from app.services.tools import extract_knowledge_keywords, handle_logistics_issue, handle_order_issue, search_knowledge
-from app.storage.db import insert_knowledge_article
+from app.services.tools import (
+    create_complaint,
+    extract_knowledge_keywords,
+    handle_logistics_issue,
+    handle_order_issue,
+    query_logistics_by_order,
+    search_knowledge,
+)
+from app.storage.db import get_complaint_by_id, insert_knowledge_article
 
 
 def test_search_knowledge_finds_return_policy_sections():
@@ -97,6 +104,15 @@ def test_handle_logistics_issue_is_available_as_function_calling_tool():
     assert "handle_logistics_issue" in names
 
 
+def test_create_complaint_supports_priority_and_handler():
+    result = create_complaint("pytest-priority-user", "高风险投诉", priority="high", handler="客服主管")
+    complaint = get_complaint_by_id(result["complaint_id"])
+
+    assert result["status"] == "created"
+    assert complaint["priority"] == "high"
+    assert complaint["handler"] == "客服主管"
+
+
 def test_handle_order_issue_is_available_as_function_calling_tool():
     tools = list_function_calling_tools()
     names = [tool["function"]["name"] for tool in tools]
@@ -110,10 +126,24 @@ def test_handle_order_issue_combines_order_and_knowledge():
     assert result["found"] is True
     assert result["order_no"] == "A101"
     assert result["order_status"] == "shipped"
+    assert result["tracking_no"] == "L101"
+    assert result["logistics_status"] == "delivered"
     assert result["knowledge_found"] is True
     assert result["suggest_complaint"] is True
+    assert "签收信息" in result["agent_suggestion"]
     assert "调用工具：query_order" in result["steps"]
+    assert "调用工具：query_logistics_by_order" in result["steps"]
     assert "调用工具：search_knowledge" in result["steps"]
+    assert "生成客服处理建议" in result["steps"]
+
+
+def test_query_logistics_by_order_finds_related_tracking_no():
+    result = query_logistics_by_order("A101")
+
+    assert result["found"] is True
+    assert result["order_no"] == "A101"
+    assert result["tracking_no"] == "L101"
+    assert result["status"] == "delivered"
 
 
 def test_handle_order_issue_template_reply_is_readable():
@@ -129,6 +159,8 @@ def test_handle_order_issue_template_reply_is_readable():
 
     assert "已同时查询订单状态和平台发货政策" in reply
     assert "订单 A101" in reply
+    assert "关联物流 L101" in reply
+    assert "客服处理建议" in reply
     assert "确认创建投诉" in reply
 
 
@@ -141,8 +173,10 @@ def test_handle_logistics_issue_combines_logistics_and_knowledge():
     assert result["logistics_status"] == "delivered"
     assert result["knowledge_found"] is True
     assert result["suggest_complaint"] is True
+    assert "签收人" in result["agent_suggestion"]
     assert "调用工具：query_logistics" in result["steps"]
     assert "调用工具：search_knowledge" in result["steps"]
+    assert "生成客服处理建议" in result["steps"]
 
 
 def test_handle_logistics_issue_template_reply_is_readable():
@@ -158,6 +192,7 @@ def test_handle_logistics_issue_template_reply_is_readable():
 
     assert "已同时查询物流状态和平台政策" in reply
     assert "物流 L101" in reply
+    assert "客服处理建议" in reply
     assert "确认创建投诉" in reply
 
 

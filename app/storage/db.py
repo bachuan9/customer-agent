@@ -978,12 +978,19 @@ def delete_knowledge_article(article_id: int) -> bool:
 
 
 # 8. 投诉工单：创建、查询、筛选投诉记录。
-def insert_complaint(user_id: str, content: str, status: str = "pending", priority: str = "medium") -> str:
+def insert_complaint(
+    user_id: str,
+    content: str,
+    status: str = "pending",
+    priority: str = "medium",
+    handler: Optional[str] = None,
+) -> str:
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    next_handler = handler.strip() if handler else None
     with get_connection() as conn:
         cursor = conn.execute(
             "INSERT INTO complaints (user_id, content, created_at, status, priority, handler, updated_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, content, created_at, status, priority, None, None, None),
+            (user_id, content, created_at, status, priority, next_handler, None, None),
         )
         conn.commit()
         complaint_id = cursor.lastrowid
@@ -1354,6 +1361,28 @@ def get_logistics_by_tracking_no(tracking_no: str) -> Optional[Dict[str, str]]:
     if row is None:
         return None
 
+    return {
+        "tracking_no": row["tracking_no"],
+        "order_no": row["order_no"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def get_logistics_by_order_no(order_no: str) -> Optional[Dict[str, str]]:
+    query = """
+        SELECT tracking_no, order_no, status, created_at, updated_at
+        FROM logistics
+        WHERE order_no = ?
+        ORDER BY id ASC
+        LIMIT 1
+    """
+    with get_connection() as conn:
+        row = conn.execute(query, (order_no,)).fetchone()
+
+    if row is None:
+        return None
     return {
         "tracking_no": row["tracking_no"],
         "order_no": row["order_no"],
