@@ -15,6 +15,7 @@ from app.models.schemas import (
     LoginRequest,
     LogisticsCreateRequest,
     LogisticsUpdateRequest,
+    ManualChatReplyRequest,
     OrderCreateRequest,
     OrderUpdateRequest,
     UserActiveUpdateRequest,
@@ -34,6 +35,7 @@ from app.storage.db import (
     fetch_audit_log_stats,
     fetch_audit_logs,
     fetch_chat_messages,
+    fetch_chat_sessions,
     fetch_logistics,
     fetch_orders,
     fetch_complaint_notes,
@@ -388,10 +390,37 @@ def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatRes
     return ChatResponse(reply=result["reply"], steps=result["steps"])
 
 
+@router.get("/chat/sessions")
+def chat_sessions(limit: int = 50, authorization: str = Header(default=None)) -> list:
+    user = get_user_by_token(extract_bearer_token(authorization))
+    if user is not None and user["role"] != "manager":
+        return [session for session in fetch_chat_sessions(limit=limit) if session["user_id"] == user["username"]]
+    return fetch_chat_sessions(limit=limit)
+
+
 @router.get("/chat/history/{user_id}")
 def chat_history(user_id: str, limit: int = 50, authorization: str = Header(default=None)) -> list:
     ensure_chat_history_access(user_id, authorization)
     return fetch_chat_messages(user_id, limit=limit)
+
+
+@router.post("/chat/history/{user_id}/reply")
+def reply_to_chat_history(
+    user_id: str,
+    req: ManualChatReplyRequest,
+    authorization: str = Header(default=None),
+) -> dict:
+    ensure_chat_history_access(user_id, authorization)
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="reply message is required")
+
+    return save_chat_message(
+        user_id=user_id,
+        sender="agent",
+        message=message,
+        steps=["人工客服回复：保存到聊天历史"],
+    )
 
 
 @router.delete("/chat/history/{user_id}")

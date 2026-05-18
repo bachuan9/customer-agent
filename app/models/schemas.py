@@ -19,6 +19,10 @@ class ChatResponse(BaseModel):
     steps: List[str] = []
 
 
+class ManualChatReplyRequest(BaseModel):
+    message: str
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

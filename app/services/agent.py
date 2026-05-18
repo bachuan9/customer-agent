@@ -403,6 +403,8 @@ def format_llm_tool_selection_reply(selection):
         for match in result.get("matches", []):
             if isinstance(match, dict):
                 lines.append(f"- {match['content']}")
+                if match.get("match_reason"):
+                    lines.append(f"  命中依据：{match['match_reason']}")
             else:
                 lines.append(f"- {match}")
         sources = result.get("sources") or ([result["source"]] if result.get("source") else [])
@@ -500,6 +502,8 @@ def append_issue_knowledge_reply(lines, knowledge_result, *, heading, suggestion
     for match in knowledge_result.get("matches", []):
         content = match["content"] if isinstance(match, dict) else match
         lines.append(f"- {content}")
+        if isinstance(match, dict) and match.get("match_reason"):
+            lines.append(f"  命中依据：{match['match_reason']}")
 
     lines.append(suggestion)
     sources = knowledge_result.get("sources") or ([knowledge_result["source"]] if knowledge_result.get("source") else [])

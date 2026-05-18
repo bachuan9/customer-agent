@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.storage.db import insert_tool_call_log
+from app.storage.db import insert_tool_call_log, save_chat_message
 
 
 client = TestClient(app)
@@ -133,6 +133,134 @@ def test_delete_chat_history_endpoint_clears_pending_agent_memory():
     assert delete_response.json()["session_cleared"] is True
     assert confirm_response.status_code == 200
     assert "当前没有待确认创建的投诉" in confirm_response.json()["reply"]
+
+
+def test_chat_sessions_endpoint_returns_latest_message_summary():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+
+    try:
+        first_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-session-a",
+                "message": "查订单 A101",
+                "role": "agent",
+            },
+        )
+        second_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-session-b",
+                "message": "查物流 L101",
+                "role": "agent",
+            },
+        )
+        sessions_response = client.get("/chat/sessions")
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert sessions_response.status_code == 200
+    sessions = sessions_response.json()
+    session_by_user = {item["user_id"]: item for item in sessions}
+    assert session_by_user["pytest-session-a"]["message_count"] >= 2
+    assert session_by_user["pytest-session-b"]["last_sender"] == "agent"
+    assert session_by_user["pytest-session-b"]["needs_reply"] is False
+    assert "物流 L101" in session_by_user["pytest-session-b"]["last_message"]
+
+
+def test_chat_sessions_endpoint_marks_user_last_message_as_needing_reply():
+    user_id = "pytest-session-needs-reply"
+    save_chat_message(user_id, "agent", "上一轮已回复")
+    save_chat_message(user_id, "user", "我还有一个问题")
+
+    response = client.get("/chat/sessions")
+
+    assert response.status_code == 200
+    session_by_user = {item["user_id"]: item for item in response.json()}
+    assert session_by_user[user_id]["last_sender"] == "user"
+    assert session_by_user[user_id]["needs_reply"] is True
+
+
+def test_chat_sessions_endpoint_limits_agent_to_own_session():
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = False
+    token = login_token("agent1", "agent123")
+
+    try:
+        own_response = client.post(
+            "/chat",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "user_id": "fake-user",
+                "message": "查订单 A101",
+                "role": "manager",
+            },
+        )
+        other_response = client.post(
+            "/chat",
+            json={
+                "user_id": "pytest-other-session",
+                "message": "查物流 L101",
+                "role": "agent",
+            },
+        )
+        sessions_response = client.get(
+            "/chat/sessions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert own_response.status_code == 200
+    assert other_response.status_code == 200
+    assert sessions_response.status_code == 200
+    sessions = sessions_response.json()
+    assert sessions
+    assert {item["user_id"] for item in sessions} == {"agent1"}
+
+
+def test_manual_chat_reply_endpoint_saves_agent_message():
+    user_id = "pytest-manual-reply"
+    save_chat_message(user_id, "user", "请问我的订单怎么处理")
+
+    response = client.post(
+        f"/chat/history/{user_id}/reply",
+        json={"message": "您好，客服正在为您核实订单状态。"},
+    )
+    history_response = client.get(f"/chat/history/{user_id}")
+
+    assert response.status_code == 200
+    assert response.json()["sender"] == "agent"
+    assert response.json()["message"] == "您好，客服正在为您核实订单状态。"
+    assert history_response.status_code == 200
+    assert history_response.json()[-1]["sender"] == "agent"
+    assert history_response.json()[-1]["steps"] == ["人工客服回复：保存到聊天历史"]
+
+
+def test_manual_chat_reply_endpoint_rejects_empty_message():
+    response = client.post(
+        "/chat/history/pytest-empty-reply/reply",
+        json={"message": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "reply message is required"
+
+
+def test_agent_cannot_manually_reply_to_another_users_chat():
+    token = login_token("agent1", "agent123")
+
+    response = client.post(
+        "/chat/history/other-user/reply",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"message": "这是一条越权回复"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "cannot access another user's chat history"
 
 
 def test_agent_cannot_access_another_users_chat_history_when_logged_in():
@@ -723,6 +851,8 @@ def test_knowledge_search_debug_returns_rag_explanations():
     assert body["matches"]
     assert body["matches"][0]["score"] >= 3
     assert isinstance(body["matches"][0]["matched_keywords"], list)
+    assert "match_reason" in body["matches"][0]
+    assert "相关度分数" in body["matches"][0]["match_reason"]
 
 
 def test_knowledge_search_debug_returns_empty_for_unrelated_query():

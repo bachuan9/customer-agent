@@ -47,6 +47,11 @@ KNOWLEDGE_KEYWORD_GROUPS = {
         "专属客服",
     ],
 }
+KNOWLEDGE_GROUP_LABELS = {
+    "shipping": "物流配送",
+    "return": "退货售后",
+    "membership": "会员权益",
+}
 LOGISTICS_ISSUE_SUGGESTION_KEYWORDS = {
     "48小时",
     "48 小时",
@@ -245,6 +250,13 @@ def get_matched_knowledge_groups(query: str, section: str) -> List[str]:
     return matched_groups
 
 
+def build_knowledge_match_reason(score: int, matched_keywords: List[str], matched_groups: List[str], source: str) -> str:
+    keyword_text = "、".join(matched_keywords) if matched_keywords else "无明确关键词"
+    group_labels = [KNOWLEDGE_GROUP_LABELS.get(group, group) for group in matched_groups]
+    group_text = "、".join(group_labels) if group_labels else "未识别业务分类"
+    return f"因为用户问题和该知识都包含：{keyword_text}；分类命中：{group_text}；相关度分数：{score}；来源：{source}。"
+
+
 def search_knowledge(query: str) -> Dict[str, Any]:
     knowledge_files = list_knowledge_files()
     db_articles = fetch_knowledge_articles(include_disabled=False)
@@ -260,10 +272,13 @@ def search_knowledge(query: str) -> Dict[str, Any]:
         for section in split_knowledge_sections(content):
             score = score_knowledge_section(query, section)
             if score >= MIN_KNOWLEDGE_SCORE:
+                matched_keywords = get_matched_knowledge_keywords(query, section)
+                matched_groups = get_matched_knowledge_groups(query, section)
                 scored_sections.append({
                     "score": score,
-                    "matched_keywords": get_matched_knowledge_keywords(query, section),
-                    "matched_groups": get_matched_knowledge_groups(query, section),
+                    "matched_keywords": matched_keywords,
+                    "matched_groups": matched_groups,
+                    "match_reason": build_knowledge_match_reason(score, matched_keywords, matched_groups, source),
                     "content": section,
                     "source": source,
                 })
@@ -273,10 +288,13 @@ def search_knowledge(query: str) -> Dict[str, Any]:
         score = score_knowledge_section(query, article_text)
         if score >= MIN_KNOWLEDGE_SCORE:
             source = f"knowledge_articles:{article['id']}"
+            matched_keywords = get_matched_knowledge_keywords(query, article_text)
+            matched_groups = get_matched_knowledge_groups(query, article_text)
             scored_sections.append({
                 "score": score,
-                "matched_keywords": get_matched_knowledge_keywords(query, article_text),
-                "matched_groups": get_matched_knowledge_groups(query, article_text),
+                "matched_keywords": matched_keywords,
+                "matched_groups": matched_groups,
+                "match_reason": build_knowledge_match_reason(score, matched_keywords, matched_groups, source),
                 "content": article_text,
                 "source": source,
             })
@@ -290,6 +308,7 @@ def search_knowledge(query: str) -> Dict[str, Any]:
             "score": item["score"],
             "matched_keywords": item["matched_keywords"],
             "matched_groups": item["matched_groups"],
+            "match_reason": item["match_reason"],
         }
         for item in top_sections
     ]

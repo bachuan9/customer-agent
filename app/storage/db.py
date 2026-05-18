@@ -505,6 +505,43 @@ def fetch_chat_messages(user_id: str, limit: int = 50) -> List[Dict[str, str]]:
     return results
 
 
+def fetch_chat_sessions(limit: int = 50) -> List[Dict[str, str]]:
+    safe_limit = max(1, min(limit, 200))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                latest.user_id,
+                latest.sender AS last_sender,
+                latest.message AS last_message,
+                latest.created_at AS last_message_at,
+                counts.message_count
+            FROM chat_messages AS latest
+            JOIN (
+                SELECT user_id, MAX(id) AS latest_id, COUNT(*) AS message_count
+                FROM chat_messages
+                GROUP BY user_id
+            ) AS counts
+            ON latest.user_id = counts.user_id AND latest.id = counts.latest_id
+            ORDER BY latest.id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+
+    return [
+        {
+            "user_id": row["user_id"],
+            "last_sender": row["last_sender"],
+            "last_message": row["last_message"],
+            "last_message_at": row["last_message_at"],
+            "message_count": row["message_count"],
+            "needs_reply": row["last_sender"] == "user",
+        }
+        for row in rows
+    ]
+
+
 def clear_chat_messages(user_id: str) -> int:
     with get_connection() as conn:
         cursor = conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))

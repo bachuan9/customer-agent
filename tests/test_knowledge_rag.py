@@ -77,6 +77,8 @@ def test_search_knowledge_returns_match_explanations():
     assert first_match["score"] >= 3
     assert isinstance(first_match["matched_keywords"], list)
     assert "shipping" in first_match["matched_groups"]
+    assert "物流配送" in first_match["match_reason"]
+    assert "相关度分数" in first_match["match_reason"]
     assert "content" in first_match
     assert "source" in first_match
 
@@ -171,6 +173,21 @@ def test_knowledge_template_reply_includes_source():
     )
 
     assert "docs/knowledge/return-policy.md" in reply
+
+
+def test_knowledge_template_reply_includes_match_reason():
+    result = search_knowledge("48 物流")
+    reply = format_llm_tool_selection_reply(
+        {
+            "tool_name": "search_knowledge",
+            "arguments": {"query": "48 物流"},
+            "tool_result": result,
+            "requires_confirmation": False,
+        }
+    )
+
+    assert "命中依据" in reply
+    assert "物流配送" in reply
 
 
 def test_search_knowledge_finds_database_article():

@@ -8,7 +8,7 @@
 - 物流：创建、列表、查询、更新状态。
 - 投诉工单：创建、列表、筛选、详情、状态流转、优先级、处理人分配。
 - 投诉备注：添加、查看、修改、删除。
-- 知识库/RAG：支持 Markdown 知识库和数据库知识库，Agent 可检索客服政策。
+- 知识库/RAG：支持 Markdown 知识库和数据库知识库，Agent 可检索客服政策并展示命中原因。
 - LLM Agent：支持 DeepSeek Function Calling 选择工具。
 - 人工确认：写操作先进入待确认状态，用户确认后才执行。
 - RBAC 权限：普通客服和主管权限不同。
@@ -139,7 +139,7 @@ node --check web\app.js
 当前完整检查应看到：
 
 ```text
-pytest: 49 passed
+pytest: 82 passed
 node --check web/app.js: passed
 python -m compileall app: passed
 ```
@@ -157,6 +157,7 @@ python -m compileall app: passed
 6. 点击工具日志，查看 LLM Agent、权限拒绝、确认执行等记录。
 7. 点击审计日志，查看并筛选登录、用户管理、知识库维护等后台操作记录。
 8. 在知识库里新增一条政策，再用聊天框测试 RAG 检索。
+9. 点击会话列表，测试待回复状态和人工客服回复。
 ```
 
 ## 主要目录

@@ -16,6 +16,7 @@ const statusInput = document.getElementById("status");
 const complaintsBtn = document.getElementById("complaintsBtn");
 const ordersBtn = document.getElementById("ordersBtn");
 const logisticsBtn = document.getElementById("logisticsBtn");
+const chatSessionsBtn = document.getElementById("chatSessionsBtn");
 const knowledgeBtn = document.getElementById("knowledgeBtn");
 const toolLogsBtn = document.getElementById("toolLogsBtn");
 const usersBtn = document.getElementById("usersBtn");
@@ -351,6 +352,111 @@ async function loadChatHistory() {
   }
 }
 
+function renderChatSessions(sessions = []) {
+  if (!sessions.length) {
+    return "<p class=\"empty-state\">暂无会话记录。</p>";
+  }
+
+  const tableHtml = renderTable(
+    [
+      {
+        key: "user_id",
+        label: "用户",
+        render: (value) =>
+          `<button class="link-button chat-session-open-btn" type="button" data-user-id="${escapeHtml(String(value))}">${escapeHtml(String(value))}</button>`,
+      },
+      { key: "message_count", label: "消息数" },
+      {
+        key: "needs_reply",
+        label: "状态",
+        render: (value) => (value ? "待回复" : "已回复"),
+      },
+      {
+        key: "last_sender",
+        label: "最后发送方",
+        render: (value) => (value === "user" ? "用户" : "Agent"),
+      },
+      { key: "last_message", label: "最后消息" },
+      { key: "last_message_at", label: "最后时间" },
+      {
+        key: "user_id",
+        label: "操作",
+        render: (value) =>
+          `<button class="link-button chat-session-reply-btn" type="button" data-user-id="${escapeHtml(String(value))}">回复</button>`,
+      },
+    ],
+    sessions
+  );
+
+  return `
+    ${tableHtml}
+    <form class="manual-reply-form">
+      <input name="user_id" type="hidden" />
+      <textarea name="message" rows="3" placeholder="先点击某个会话的“回复”，再输入人工客服回复内容。"></textarea>
+      <div class="form-actions">
+        <button type="submit">发送人工回复</button>
+      </div>
+      <p class="empty-state">人工回复不会调用 Agent，只会作为客服消息保存到聊天历史。</p>
+    </form>
+  `;
+}
+
+async function loadChatSessions() {
+  const loadingBubble = appendBubble("agent", "正在加载会话列表...", { typing: true });
+
+  try {
+    const res = await fetch(`${API_BASE}/chat/sessions`, {
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const sessions = await res.json();
+    setBubbleHtml(loadingBubble, renderChatSessions(sessions));
+    loadingBubble.classList.remove("typing");
+  } catch (err) {
+    setBubbleText(loadingBubble, "会话列表加载失败，请确认后端服务正在运行。");
+    loadingBubble.classList.remove("typing");
+  }
+}
+
+async function submitManualReply(form) {
+  const userId = String(form.elements.user_id.value || "").trim();
+  const message = String(form.elements.message.value || "").trim();
+
+  if (!userId) {
+    appendBubble("agent", "请先在会话列表里点击某个用户的“回复”。");
+    return;
+  }
+
+  if (!message) {
+    appendBubble("agent", "请先输入人工客服回复内容。");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/chat/history/${encodeURIComponent(userId)}/reply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...buildAuthHeaders(),
+      },
+      body: JSON.stringify({ message }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    form.reset();
+    userIdInput.value = userId;
+    appendBubble("agent", `已向 ${userId} 发送人工回复，并保存到聊天历史。`);
+    await loadChatHistory();
+  } catch (err) {
+    appendBubble("agent", "人工回复发送失败，请确认后端服务和登录权限。");
+  }
+}
+
 // 4. 表格渲染：把订单、物流、投诉列表渲染成 HTML 表格。
 function renderTable(columns, rows) {
   const head = columns
@@ -567,6 +673,7 @@ function renderRagDebugResult(result) {
             </div>
             <div class="rag-group-tags">分类：${renderRagGroupTags(match.matched_groups || [])}</div>
             <p class="rag-debug-keywords">关键词：${escapeHtml((match.matched_keywords || []).join(", ") || "无")}</p>
+            <p class="rag-debug-reason">命中原因：${escapeHtml(match.match_reason || "暂无命中原因")}</p>
             <pre>${escapeHtml(match.content || "")}</pre>
           </article>
         `
@@ -1535,6 +1642,28 @@ messageInput.addEventListener("keydown", (event) => {
 });
 
 chatBody.addEventListener("click", (event) => {
+  const sessionButton = event.target.closest(".chat-session-open-btn");
+  if (sessionButton) {
+    const sessionUserId = sessionButton.dataset.userId;
+    if (sessionUserId) {
+      userIdInput.value = sessionUserId;
+      loadChatHistory();
+    }
+    return;
+  }
+
+  const replyButton = event.target.closest(".chat-session-reply-btn");
+  if (replyButton) {
+    const sessionUserId = replyButton.dataset.userId;
+    const replyForm = chatBody.querySelector(".manual-reply-form");
+    if (sessionUserId && replyForm) {
+      replyForm.elements.user_id.value = sessionUserId;
+      replyForm.elements.message.placeholder = `回复 ${sessionUserId}：请输入人工客服回复内容`;
+      replyForm.elements.message.focus();
+    }
+    return;
+  }
+
   const button = event.target.closest(".complaint-action-btn");
   if (!button) return;
 
@@ -1542,6 +1671,14 @@ chatBody.addEventListener("click", (event) => {
   if (!complaintId) return;
 
   fillComplaintAction(complaintId, button.dataset.action);
+});
+
+chatBody.addEventListener("submit", (event) => {
+  const manualReplyForm = event.target.closest(".manual-reply-form");
+  if (!manualReplyForm) return;
+
+  event.preventDefault();
+  submitManualReply(manualReplyForm);
 });
 
 loginForm.addEventListener("submit", login);
@@ -1571,6 +1708,8 @@ clearBtn.addEventListener("click", async () => {
     appendBubble("agent", "聊天历史清空失败，请确认后端服务正在运行。");
   }
 });
+
+chatSessionsBtn.addEventListener("click", loadChatSessions);
 
 // 9. 投诉列表查询：渲染投诉记录和每行操作按钮。
 complaintsBtn.addEventListener("click", async () => {
