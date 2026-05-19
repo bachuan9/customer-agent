@@ -1,8 +1,12 @@
 import os
 import re
+import json
+import math
+import hashlib
 from typing import Any, Dict, List, Optional
 
 MIN_KNOWLEDGE_SCORE = 3
+LOCAL_EMBEDDING_DIMENSIONS = 64
 KNOWLEDGE_KEYWORD_GROUPS = {
     "shipping": [
         "物流",
@@ -78,8 +82,10 @@ from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
     ALLOWED_ORDER_STATUSES,
     delete_complaint_note as db_delete_complaint_note,
+    clear_knowledge_chunks,
     fetch_complaint_notes,
     fetch_complaints,
+    fetch_knowledge_chunks,
     fetch_knowledge_articles,
     get_logistics_by_order_no,
     get_complaint_by_id,
@@ -89,6 +95,7 @@ from app.storage.db import (
     get_order_status,
     insert_complaint as db_insert_complaint,
     insert_complaint_note as db_insert_complaint_note,
+    insert_knowledge_chunk,
     insert_logistics as db_insert_logistics,
     insert_order as db_insert_order,
     update_complaint as db_update_complaint,
@@ -272,6 +279,103 @@ def split_knowledge_sections(content: str) -> List[str]:
     return [section.strip() for section in sections if section.strip()]
 
 
+def get_knowledge_chunk_title(section: str, fallback: str = "") -> str:
+    first_line = section.strip().splitlines()[0] if section.strip() else ""
+    if first_line.startswith("#"):
+        return first_line.lstrip("#").strip()
+    return fallback
+
+
+def normalize_embedding_text(text: str) -> str:
+    return text.lower().replace(" ", "")
+
+
+def create_local_embedding(text: str, dimensions: int = LOCAL_EMBEDDING_DIMENSIONS) -> List[float]:
+    vector = [0.0] * dimensions
+    normalized_text = normalize_embedding_text(text)
+    if not normalized_text:
+        return vector
+
+    for char in normalized_text:
+        digest = hashlib.md5(char.encode("utf-8")).hexdigest()
+        index = int(digest[:8], 16) % dimensions
+        vector[index] += 1.0
+
+    length = math.sqrt(sum(value * value for value in vector))
+    if length == 0:
+        return vector
+    return [round(value / length, 6) for value in vector]
+
+
+def serialize_embedding(embedding: List[float]) -> str:
+    return json.dumps(embedding, ensure_ascii=False)
+
+
+def parse_embedding(value: Optional[str]) -> List[float]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [float(item) for item in parsed if isinstance(item, (int, float))]
+
+
+def cosine_similarity(left: List[float], right: List[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot_product = sum(a * b for a, b in zip(left, right))
+    left_length = math.sqrt(sum(a * a for a in left))
+    right_length = math.sqrt(sum(b * b for b in right))
+    if left_length == 0 or right_length == 0:
+        return 0.0
+    return dot_product / (left_length * right_length)
+
+
+def rebuild_knowledge_index() -> Dict[str, Any]:
+    deleted_count = clear_knowledge_chunks()
+    chunks = []
+
+    for knowledge_path in list_knowledge_files():
+        with open(knowledge_path, "r", encoding="utf-8") as file:
+            content = file.read()
+
+        source = format_knowledge_source(knowledge_path)
+        for index, section in enumerate(split_knowledge_sections(content), start=1):
+            chunks.append(
+                insert_knowledge_chunk(
+                    source_type="markdown",
+                    source_id=f"{source}#{index}",
+                    source=source,
+                    title=get_knowledge_chunk_title(section, fallback=source),
+                    content=section,
+                    embedding=serialize_embedding(create_local_embedding(section)),
+                )
+            )
+
+    for article in fetch_knowledge_articles(include_disabled=False):
+        article_text = f"{article['title']}\n{article['content']}"
+        chunks.append(
+            insert_knowledge_chunk(
+                source_type="knowledge_article",
+                source_id=str(article["id"]),
+                source=f"knowledge_articles:{article['id']}",
+                title=article["title"],
+                content=article_text,
+                tags=article["tags"],
+                embedding=serialize_embedding(create_local_embedding(article_text)),
+            )
+        )
+
+    return {
+        "deleted_count": deleted_count,
+        "indexed_count": len(chunks),
+        "chunks": chunks,
+    }
+
+
 def extract_knowledge_keywords(query: str) -> List[str]:
     normalized_query = query.lower().replace(" ", "")
     keywords = []
@@ -334,45 +438,36 @@ def build_knowledge_match_reason(score: int, matched_keywords: List[str], matche
 
 
 def search_knowledge(query: str) -> Dict[str, Any]:
-    knowledge_files = list_knowledge_files()
-    db_articles = fetch_knowledge_articles(include_disabled=False)
-    if not knowledge_files and not db_articles:
+    knowledge_chunks = fetch_knowledge_chunks()
+    if not knowledge_chunks:
+        rebuild_result = rebuild_knowledge_index()
+        knowledge_chunks = rebuild_result["chunks"]
+
+    if not knowledge_chunks:
         return {"found": False, "query": query, "matches": [], "sources": [], "error": "knowledge_not_found"}
 
+    query_embedding = create_local_embedding(query)
     scored_sections = []
-    for knowledge_path in knowledge_files:
-        with open(knowledge_path, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        source = format_knowledge_source(knowledge_path)
-        for section in split_knowledge_sections(content):
-            score = score_knowledge_section(query, section)
-            if score >= MIN_KNOWLEDGE_SCORE:
-                matched_keywords = get_matched_knowledge_keywords(query, section)
-                matched_groups = get_matched_knowledge_groups(query, section)
-                scored_sections.append({
-                    "score": score,
-                    "matched_keywords": matched_keywords,
-                    "matched_groups": matched_groups,
-                    "match_reason": build_knowledge_match_reason(score, matched_keywords, matched_groups, source),
-                    "content": section,
-                    "source": source,
-                })
-
-    for article in db_articles:
-        article_text = f"{article['title']}\n{article['content']}"
-        score = score_knowledge_section(query, article_text)
-        if score >= MIN_KNOWLEDGE_SCORE:
-            source = f"knowledge_articles:{article['id']}"
+    for chunk in knowledge_chunks:
+        article_text = chunk["content"]
+        keyword_score = score_knowledge_section(query, article_text)
+        embedding_score = cosine_similarity(query_embedding, parse_embedding(chunk.get("embedding")))
+        combined_score = keyword_score + embedding_score
+        if keyword_score >= MIN_KNOWLEDGE_SCORE:
             matched_keywords = get_matched_knowledge_keywords(query, article_text)
             matched_groups = get_matched_knowledge_groups(query, article_text)
             scored_sections.append({
-                "score": score,
+                "score": combined_score,
+                "keyword_score": keyword_score,
+                "embedding_score": round(embedding_score, 6),
                 "matched_keywords": matched_keywords,
                 "matched_groups": matched_groups,
-                "match_reason": build_knowledge_match_reason(score, matched_keywords, matched_groups, source),
+                "match_reason": build_knowledge_match_reason(keyword_score, matched_keywords, matched_groups, chunk["source"]),
                 "content": article_text,
-                "source": source,
+                "source": chunk["source"],
+                "source_type": chunk["source_type"],
+                "title": chunk["title"],
+                "retrieval_mode": "hybrid_keyword_embedding",
             })
 
     scored_sections.sort(key=lambda item: item["score"], reverse=True)
@@ -382,9 +477,14 @@ def search_knowledge(query: str) -> Dict[str, Any]:
             "content": item["content"],
             "source": item["source"],
             "score": item["score"],
+            "keyword_score": item["keyword_score"],
+            "embedding_score": item["embedding_score"],
             "matched_keywords": item["matched_keywords"],
             "matched_groups": item["matched_groups"],
             "match_reason": item["match_reason"],
+            "source_type": item["source_type"],
+            "title": item["title"],
+            "retrieval_mode": item["retrieval_mode"],
         }
         for item in top_sections
     ]

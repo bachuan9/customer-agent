@@ -68,7 +68,7 @@ from app.storage.db import (
     update_user_active,
     update_user_role,
 )
-from app.services.tools import get_complaint_detail, search_knowledge
+from app.services.tools import get_complaint_detail, rebuild_knowledge_index, search_knowledge
 
 router = APIRouter()
 
@@ -386,8 +386,8 @@ def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatRes
 
     result = run_agent_with_steps(req)
     save_chat_message(req.user_id, "user", req.message)
-    save_chat_message(req.user_id, "agent", result["reply"], steps=result["steps"])
-    return ChatResponse(reply=result["reply"], steps=result["steps"])
+    save_chat_message(req.user_id, "agent", result["reply"], steps=result["steps"], trace=result["trace"])
+    return ChatResponse(reply=result["reply"], steps=result["steps"], trace=result["trace"])
 
 
 @router.get("/chat/sessions")
@@ -628,6 +628,7 @@ def create_knowledge_article(req: KnowledgeArticleCreateRequest, authorization: 
     actor = require_manager(authorization)
     try:
         article = insert_knowledge_article(req.title, req.content, req.tags, req.enabled)
+        rebuild_knowledge_index()
         write_audit_log(
             "knowledge.create",
             actor=actor,
@@ -674,6 +675,8 @@ def update_knowledge_article_endpoint(
             tags=req.tags,
             enabled=req.enabled,
         )
+        if article is not None:
+            rebuild_knowledge_index()
     except ValueError as exc:
         write_audit_log(
             "knowledge.update",
@@ -725,6 +728,7 @@ def delete_knowledge_article_endpoint(article_id: int, authorization: str = Head
             detail={"reason": "knowledge article not found"},
         )
         raise HTTPException(status_code=404, detail="knowledge article not found")
+    rebuild_knowledge_index()
     write_audit_log(
         "knowledge.delete",
         actor=actor,

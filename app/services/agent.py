@@ -297,6 +297,21 @@ def format_complaint_update_reply(result):
     return f"投诉 {complaint['id']} 已更新：状态 {status_label}，优先级 {priority_label}，处理人 {handler}。"
 
 
+def build_rag_trace(knowledge_result):
+    if not knowledge_result:
+        return {"found": False, "query": "", "sources": [], "top_score": None, "match_reason": "未执行知识库检索"}
+
+    matches = knowledge_result.get("matches") or []
+    top_match = matches[0] if matches else {}
+    return {
+        "found": knowledge_result.get("found", False),
+        "query": knowledge_result.get("query", ""),
+        "sources": knowledge_result.get("sources", []),
+        "top_score": top_match.get("score"),
+        "match_reason": top_match.get("match_reason", "未命中可靠知识"),
+    }
+
+
 def format_complaint_notes_reply(complaint_id, notes):
     if notes is None:
         return "未找到投诉工单，无法查看备注"
@@ -1242,6 +1257,7 @@ def run_agent_trace(req):
         "llm_reply_generated": False,
         "llm_fallback_error": None,
         "reply_source": "rule_template",
+        "rag": None,
     }
 
     if intent == "confirm_llm_action":
@@ -1258,9 +1274,60 @@ def run_agent_trace(req):
         trace["reply"] = handle_cancel_create_complaint(user_id, pending_existing)
         return trace
 
-    if intent in {"order_issue", "logistics_issue"}:
+    if intent == "order_issue":
         pending_existing = get_pending_complaint(user_id)
-        trace["reply"] = handle_intent(message, user_id, intent, pending_existing)
+        order_no = extract_id(message, "A")
+        result = call_tool("handle_order_issue", {"order_no": order_no, "query": message})
+        trace["rag"] = build_rag_trace(result.get("knowledge_result"))
+        if result.get("suggest_complaint"):
+            set_pending_complaint(
+                user_id,
+                {
+                    "type": "pending_complaint",
+                    "status": "waiting_confirm",
+                    "issue_type": "订单异常",
+                    "order_id": order_no,
+                    "reason": message,
+                    "priority": "high",
+                    "handler": "客服主管",
+                },
+            )
+        trace["reply"] = format_order_issue_reply(
+            order_no,
+            result["order_result"],
+            result.get("logistics_result", {}),
+            result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
+            suggest_complaint=result.get("suggest_complaint", False),
+        )
+        return trace
+
+    if intent == "logistics_issue":
+        pending_existing = get_pending_complaint(user_id)
+        tracking_no = extract_id(message, "L")
+        result = call_tool("handle_logistics_issue", {"tracking_no": tracking_no, "query": message})
+        trace["rag"] = build_rag_trace(result.get("knowledge_result"))
+        if result.get("suggest_complaint"):
+            set_pending_complaint(
+                user_id,
+                {
+                    "type": "pending_complaint",
+                    "status": "waiting_confirm",
+                    "issue_type": "物流异常",
+                    "order_id": result.get("order_no"),
+                    "tracking_no": tracking_no,
+                    "reason": message,
+                    "priority": "high",
+                    "handler": "客服主管",
+                },
+            )
+        trace["reply"] = format_logistics_issue_reply(
+            tracking_no,
+            result["logistics_result"],
+            result["knowledge_result"],
+            agent_suggestion=result.get("agent_suggestion"),
+            suggest_complaint=result.get("suggest_complaint", False),
+        )
         return trace
 
     # 如果开启 LLM，就先让大模型选择工具；失败时退回下面的规则 Agent。
@@ -1313,6 +1380,17 @@ def run_agent_trace(req):
     print(f"[DEBUG] pending_existing={pending_existing}")
 
     trace["reply"] = handle_intent(message, user_id, intent, pending_existing)
+    if intent == "search_knowledge":
+        result = call_tool("search_knowledge", {"query": message})
+        trace["rag"] = build_rag_trace(result)
+        trace["reply"] = format_llm_tool_selection_reply(
+            {
+                "tool_name": "search_knowledge",
+                "arguments": {"query": message},
+                "tool_result": result,
+                "requires_confirmation": False,
+            }
+        )
     return trace
 
 
@@ -1340,4 +1418,4 @@ def run_agent_with_steps(req):
         llm_fallback_error=trace.get("llm_fallback_error"),
         reply_source=trace.get("reply_source", "rule_template"),
     )
-    return {"reply": reply, "steps": steps}
+    return {"reply": reply, "steps": steps, "trace": trace}

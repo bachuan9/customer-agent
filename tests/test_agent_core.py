@@ -89,6 +89,8 @@ def test_run_agent_with_steps_shows_llm_execution_mode(monkeypatch):
     assert "回复来源：LLM 润色生成" in result["steps"]
     assert "LLM 选择工具：query_order" in result["steps"]
     assert "LLM 生成最终回复" in result["steps"]
+    assert result["trace"]["selection"]["arguments"] == {"order_no": "A101"}
+    assert result["trace"]["selection"]["tool_result"]["status"] == "shipped"
 
 
 def test_run_agent_with_steps_shows_llm_template_fallback_reply_source(monkeypatch):
@@ -118,6 +120,31 @@ def test_run_agent_with_steps_shows_llm_template_fallback_reply_source(monkeypat
     assert "执行模式：LLM Agent（本次调用了 LLM）" in result["steps"]
     assert "回复来源：LLM 工具结果模板" in result["steps"]
     assert "LLM 选择工具：query_order" in result["steps"]
+
+
+def test_run_agent_with_steps_traces_confirmation_requirement(monkeypatch):
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    def fake_tool_selection(message):
+        return {
+            "tool_name": "update_order",
+            "arguments": {"order_no": "A101", "status": "delivered"},
+            "tool_result": {"updated": True},
+            "requires_confirmation": True,
+        }
+
+    monkeypatch.setattr("app.services.agent.run_llm_tool_selection", fake_tool_selection)
+
+    try:
+        result = run_agent_with_steps(ChatRequest(user_id="pytest-llm-confirm-trace", message="把订单 A101 改成 delivered", role="manager"))
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert "确认执行" in result["reply"]
+    assert "保存待确认动作：pending_llm_action" in result["steps"]
+    assert result["trace"]["selection"]["tool_name"] == "update_order"
+    assert result["trace"]["selection"]["requires_confirmation"] is True
 
 
 def test_run_agent_with_steps_shows_llm_fallback_reason(monkeypatch):

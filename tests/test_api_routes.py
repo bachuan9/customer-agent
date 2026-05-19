@@ -44,6 +44,9 @@ def test_chat_endpoint_uses_rule_agent_when_llm_disabled():
     assert "执行模式：规则 Agent（本次未调用 LLM）" in response.json()["steps"]
     assert "回复来源：规则模板" in response.json()["steps"]
     assert "调用工具：query_order" in response.json()["steps"]
+    assert response.json()["trace"]["intent"] == "query_order"
+    assert response.json()["trace"]["execution_mode"] == "rule_agent"
+    assert response.json()["trace"]["reply_source"] == "rule_template"
 
 
 def test_chat_endpoint_saves_user_and_agent_messages_to_history():
@@ -72,6 +75,8 @@ def test_chat_endpoint_saves_user_and_agent_messages_to_history():
     assert history[-1]["sender"] == "agent"
     assert history[-1]["message"] == response.json()["reply"]
     assert history[-1]["steps"] == response.json()["steps"]
+    assert history[-1]["trace"]["intent"] == response.json()["trace"]["intent"]
+    assert history[-1]["trace"]["execution_mode"] == response.json()["trace"]["execution_mode"]
 
 
 def test_delete_chat_history_endpoint_clears_saved_messages():
@@ -859,6 +864,9 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
     assert "调用组合工具：handle_order_issue" in steps
     assert "内部调用：query_order" in steps
     assert "内部调用：search_knowledge" in steps
+    assert response.json()["trace"]["rag"]["found"] is True
+    assert response.json()["trace"]["rag"]["sources"]
+    assert "相关度分数" in response.json()["trace"]["rag"]["match_reason"]
 
 
 def test_pending_complaint_does_not_block_normal_order_query():

@@ -314,9 +314,48 @@ function renderAgentSteps(steps = []) {
   `;
 }
 
-function setBubbleReplyWithSteps(bubble, reply, steps = []) {
+function renderAgentTrace(trace = {}) {
+  if (!trace || !Object.keys(trace).length) return "";
+
+  const selection = trace.selection || {};
+  const rag = trace.rag || {};
+  const toolName = selection.tool_name || "无";
+  const fallback = trace.llm_fallback_error || "无";
+  const requiresConfirmation = selection.requires_confirmation ? "是" : "否";
+  const summarizeJson = (value) => {
+    if (!value) return "无";
+    const text = JSON.stringify(value);
+    return text.length > 160 ? `${text.slice(0, 160)}...` : text;
+  };
+  const rows = [
+    ["意图", trace.intent || "unknown"],
+    ["执行模式", trace.execution_mode || "unknown"],
+    ["回复来源", trace.reply_source || "unknown"],
+    ["LLM选择工具", toolName],
+    ["是否需要确认", requiresConfirmation],
+    ["工具参数", summarizeJson(selection.arguments)],
+    ["工具结果摘要", summarizeJson(selection.tool_result)],
+    ["RAG是否命中", rag.found ? "是" : "否"],
+    ["RAG来源", rag.sources?.length ? rag.sources.join("，") : "无"],
+    ["RAG最高分", rag.top_score ?? "无"],
+    ["RAG命中原因", rag.match_reason || "无"],
+    ["LLM降级原因", fallback],
+  ];
+  const items = rows
+    .map(([label, value]) => `<li><span>${escapeHtml(label)}</span>${escapeHtml(String(value))}</li>`)
+    .join("");
+
+  return `
+    <div class="agent-steps agent-trace">
+      <strong>结构化 Trace</strong>
+      <ol>${items}</ol>
+    </div>
+  `;
+}
+
+function setBubbleReplyWithSteps(bubble, reply, steps = [], trace = {}) {
   const safeReply = escapeHtml(reply || "（无回复）");
-  setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}`);
+  setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`);
 }
 
 function renderChatHistory(messages = []) {
@@ -334,7 +373,7 @@ function renderChatHistory(messages = []) {
     const role = item.sender === "user" ? "user" : "agent";
     const bubble = appendBubble(role, item.message);
     if (role === "agent" && item.steps?.length) {
-      setBubbleReplyWithSteps(bubble, item.message, item.steps);
+      setBubbleReplyWithSteps(bubble, item.message, item.steps, item.trace || {});
     }
   });
 }
@@ -835,7 +874,7 @@ async function sendMessage(message) {
     }
 
     const data = await res.json();
-    setBubbleReplyWithSteps(typingBubble, data.reply, data.steps || []);
+    setBubbleReplyWithSteps(typingBubble, data.reply, data.steps || [], data.trace || {});
     typingBubble.classList.remove("typing");
     await loadComplaintStats();
   } catch (err) {

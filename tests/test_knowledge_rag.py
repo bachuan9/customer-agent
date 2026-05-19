@@ -1,14 +1,17 @@
 from app.services.agent import format_llm_tool_selection_reply
 from app.services.tool_registry import list_function_calling_tools
 from app.services.tools import (
+    cosine_similarity,
     create_complaint,
+    create_local_embedding,
     extract_knowledge_keywords,
     handle_logistics_issue,
     handle_order_issue,
     query_logistics_by_order,
+    rebuild_knowledge_index,
     search_knowledge,
 )
-from app.storage.db import get_complaint_by_id, get_connection, insert_knowledge_article
+from app.storage.db import fetch_knowledge_chunks, get_complaint_by_id, get_connection, insert_knowledge_article
 
 
 def test_search_knowledge_finds_return_policy_sections():
@@ -255,3 +258,73 @@ def test_search_knowledge_finds_database_article():
     assert result["found"] is True
     assert "knowledge_articles:" in result["sources"][0]
     assert any("生鲜破损赔付规则" in match["content"] for match in result["matches"])
+
+
+def test_rebuild_knowledge_index_creates_markdown_chunks():
+    result = rebuild_knowledge_index()
+    chunks = fetch_knowledge_chunks()
+
+    assert result["indexed_count"] == len(chunks)
+    assert result["indexed_count"] > 0
+    assert any(chunk["source"] == "docs/knowledge/shipping-policy.md" for chunk in chunks)
+    assert all(chunk["content"] for chunk in chunks)
+
+
+def test_rebuild_knowledge_index_creates_database_article_chunk():
+    article = insert_knowledge_article(
+        "生鲜破损赔付规则",
+        "如果用户收到生鲜商品后发现破损，可以在签收后 24 小时内提交照片申请赔付。",
+        "生鲜,赔付",
+    )
+
+    rebuild_knowledge_index()
+    chunks = fetch_knowledge_chunks()
+
+    assert any(
+        chunk["source_type"] == "knowledge_article"
+        and chunk["source_id"] == str(article["id"])
+        and "生鲜破损赔付规则" in chunk["content"]
+        for chunk in chunks
+    )
+
+
+def test_search_knowledge_uses_knowledge_chunks_index():
+    insert_knowledge_article(
+        "生鲜破损赔付规则",
+        "如果用户收到生鲜商品后发现破损，可以在签收后 24 小时内提交照片申请赔付。",
+        "生鲜,赔付",
+    )
+    rebuild_knowledge_index()
+
+    result = search_knowledge("生鲜破损怎么赔付")
+
+    assert result["found"] is True
+    assert result["matches"][0]["source_type"] == "knowledge_article"
+    assert "生鲜破损赔付规则" in result["matches"][0]["content"]
+
+
+def test_local_embedding_similarity_prefers_related_text():
+    query_embedding = create_local_embedding("物流 48 小时没有更新")
+    related_embedding = create_local_embedding("物流超过 48 小时没有更新，可以联系客服")
+    unrelated_embedding = create_local_embedding("会员积分可以兑换优惠券")
+
+    assert cosine_similarity(query_embedding, related_embedding) > cosine_similarity(query_embedding, unrelated_embedding)
+
+
+def test_rebuild_knowledge_index_stores_chunk_embedding():
+    rebuild_knowledge_index()
+    chunks = fetch_knowledge_chunks()
+
+    assert chunks
+    assert all(chunk["embedding"] for chunk in chunks)
+
+
+def test_search_knowledge_returns_embedding_scores():
+    rebuild_knowledge_index()
+
+    result = search_knowledge("48 物流")
+
+    assert result["found"] is True
+    assert result["matches"][0]["retrieval_mode"] == "hybrid_keyword_embedding"
+    assert "keyword_score" in result["matches"][0]
+    assert "embedding_score" in result["matches"][0]

@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ class AuthenticatedChatRequest(ChatRequest):
 class ChatResponse(BaseModel):
     reply: str
     steps: List[str] = []
+    trace: Dict[str, Any] = {}
 
 
 class ManualChatReplyRequest(BaseModel):

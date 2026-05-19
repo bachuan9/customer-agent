@@ -86,6 +86,7 @@ def init_db() -> None:
     init_orders_table()
     init_logistics_table()
     init_knowledge_articles_table()
+    init_knowledge_chunks_table()
     init_users_table()
     init_chat_messages_table()
     ensure_default_users()
@@ -441,6 +442,7 @@ def init_chat_messages_table() -> None:
                 sender TEXT NOT NULL,
                 message TEXT NOT NULL,
                 steps TEXT DEFAULT NULL,
+                trace TEXT DEFAULT NULL,
                 created_at TEXT NOT NULL
             )
             """
@@ -449,6 +451,8 @@ def init_chat_messages_table() -> None:
         existing_columns = [row[1] for row in cursor.fetchall()]
         if "steps" not in existing_columns:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN steps TEXT DEFAULT NULL")
+        if "trace" not in existing_columns:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN trace TEXT DEFAULT NULL")
         conn.commit()
 
 
@@ -457,13 +461,15 @@ def save_chat_message(
     sender: str,
     message: str,
     steps: Optional[List[str]] = None,
+    trace: Optional[Dict] = None,
 ) -> Dict[str, str]:
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     steps_text = json.dumps(steps or [], ensure_ascii=False)
+    trace_text = json.dumps(trace or {}, ensure_ascii=False)
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO chat_messages (user_id, sender, message, steps, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, sender, message, steps_text, created_at),
+            "INSERT INTO chat_messages (user_id, sender, message, steps, trace, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, sender, message, steps_text, trace_text, created_at),
         )
         conn.commit()
         message_id = cursor.lastrowid
@@ -474,6 +480,7 @@ def save_chat_message(
         "sender": sender,
         "message": message,
         "steps": steps or [],
+        "trace": trace or {},
         "created_at": created_at,
     }
 
@@ -483,7 +490,7 @@ def fetch_chat_messages(user_id: str, limit: int = 50) -> List[Dict[str, str]]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, user_id, sender, message, steps, created_at
+            SELECT id, user_id, sender, message, steps, trace, created_at
             FROM chat_messages
             WHERE user_id = ?
             ORDER BY id DESC
@@ -501,6 +508,7 @@ def fetch_chat_messages(user_id: str, limit: int = 50) -> List[Dict[str, str]]:
                 "sender": row["sender"],
                 "message": row["message"],
                 "steps": json.loads(row["steps"] or "[]"),
+                "trace": json.loads(row["trace"] or "{}"),
                 "created_at": row["created_at"],
             }
         )
@@ -849,6 +857,26 @@ def init_knowledge_articles_table() -> None:
         conn.commit()
 
 
+def init_knowledge_chunks_table() -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS knowledge_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                source TEXT NOT NULL,
+                title TEXT DEFAULT '',
+                content TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                embedding TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
 def format_knowledge_article(row: sqlite3.Row) -> Dict[str, str]:
     return {
         "id": row["id"],
@@ -977,6 +1005,75 @@ def delete_knowledge_article(article_id: int) -> bool:
         cursor = conn.execute("DELETE FROM knowledge_articles WHERE id = ?", (article_id,))
         conn.commit()
         return cursor.rowcount > 0
+
+
+def format_knowledge_chunk(row: sqlite3.Row) -> Dict[str, str]:
+    return {
+        "id": row["id"],
+        "source_type": row["source_type"],
+        "source_id": row["source_id"],
+        "source": row["source"],
+        "title": row["title"],
+        "content": row["content"],
+        "tags": row["tags"],
+        "embedding": row["embedding"],
+        "created_at": row["created_at"],
+    }
+
+
+def clear_knowledge_chunks() -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM knowledge_chunks")
+        conn.commit()
+        return cursor.rowcount
+
+
+def insert_knowledge_chunk(
+    *,
+    source_type: str,
+    source_id: str,
+    source: str,
+    title: str,
+    content: str,
+    tags: str = "",
+    embedding: Optional[str] = None,
+) -> Dict[str, str]:
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO knowledge_chunks
+                (source_type, source_id, source, title, content, tags, embedding, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (source_type, source_id, source, title, content, tags, embedding, created_at),
+        )
+        conn.commit()
+        chunk_id = cursor.lastrowid
+
+        row = conn.execute(
+            """
+            SELECT id, source_type, source_id, source, title, content, tags, embedding, created_at
+            FROM knowledge_chunks
+            WHERE id = ?
+            """,
+            (chunk_id,),
+        ).fetchone()
+
+    return format_knowledge_chunk(row)
+
+
+def fetch_knowledge_chunks() -> List[Dict[str, str]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, source_type, source_id, source, title, content, tags, embedding, created_at
+            FROM knowledge_chunks
+            ORDER BY id ASC
+            """
+        ).fetchall()
+
+    return [format_knowledge_chunk(row) for row in rows]
 
 
 def parse_utc_datetime(value: Optional[str]) -> Optional[datetime]:
