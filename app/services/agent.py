@@ -308,6 +308,11 @@ def build_rag_trace(knowledge_result):
         "query": knowledge_result.get("query", ""),
         "sources": knowledge_result.get("sources", []),
         "top_score": top_match.get("score"),
+        "retrieval_mode": top_match.get("retrieval_mode"),
+        "keyword_score": top_match.get("keyword_score"),
+        "embedding_score": top_match.get("embedding_score"),
+        "top_title": top_match.get("title"),
+        "top_source_type": top_match.get("source_type"),
         "match_reason": top_match.get("match_reason", "未命中可靠知识"),
     }
 

@@ -338,6 +338,11 @@ function renderAgentTrace(trace = {}) {
     ["RAG是否命中", rag.found ? "是" : "否"],
     ["RAG来源", rag.sources?.length ? rag.sources.join("，") : "无"],
     ["RAG最高分", rag.top_score ?? "无"],
+    ["RAG检索模式", rag.retrieval_mode || "无"],
+    ["关键词分数", rag.keyword_score ?? "无"],
+    ["Embedding分数", rag.embedding_score ?? "无"],
+    ["命中标题", rag.top_title || "无"],
+    ["来源类型", rag.top_source_type || "无"],
     ["RAG命中原因", rag.match_reason || "无"],
     ["LLM降级原因", fallback],
   ];
@@ -714,6 +719,9 @@ function renderRagDebugResult(result) {
           <article class="rag-debug-item">
             <div class="rag-debug-meta">
               <span>score: ${match.score}</span>
+              <span>keyword: ${match.keyword_score ?? "?"}</span>
+              <span>embedding: ${match.embedding_score ?? "?"}</span>
+              <span>mode: ${escapeHtml(match.retrieval_mode || "?")}</span>
               <span>source: ${escapeHtml(match.source || "无")}</span>
             </div>
             <div class="rag-group-tags">分类：${renderRagGroupTags(match.matched_groups || [])}</div>

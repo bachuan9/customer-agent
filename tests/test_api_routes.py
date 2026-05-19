@@ -866,6 +866,10 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
     assert "内部调用：search_knowledge" in steps
     assert response.json()["trace"]["rag"]["found"] is True
     assert response.json()["trace"]["rag"]["sources"]
+    assert response.json()["trace"]["rag"]["retrieval_mode"] == "hybrid_keyword_embedding"
+    assert response.json()["trace"]["rag"]["keyword_score"] >= 3
+    assert response.json()["trace"]["rag"]["embedding_score"] >= 0
+    assert response.json()["trace"]["rag"]["top_source_type"] in {"markdown", "knowledge_article"}
     assert "相关度分数" in response.json()["trace"]["rag"]["match_reason"]
 
 
