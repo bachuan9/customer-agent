@@ -615,6 +615,27 @@ def knowledge_search_debug(query: str) -> dict:
     return search_knowledge(query)
 
 
+@router.post("/knowledge/rebuild-index")
+def rebuild_knowledge_index_endpoint(authorization: str = Header(default=None)) -> dict:
+    actor = require_manager(authorization)
+    result = rebuild_knowledge_index()
+    write_audit_log(
+        "knowledge.rebuild_index",
+        actor=actor,
+        target_type="knowledge_index",
+        success=True,
+        detail={
+            "deleted_count": result["deleted_count"],
+            "indexed_count": result["indexed_count"],
+        },
+    )
+    return {
+        "status": "rebuilt",
+        "deleted_count": result["deleted_count"],
+        "indexed_count": result["indexed_count"],
+    }
+
+
 @router.get("/knowledge/{article_id}")
 def knowledge_article_detail(article_id: int) -> dict:
     article = get_knowledge_article(article_id)

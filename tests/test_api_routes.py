@@ -1272,6 +1272,33 @@ def test_knowledge_search_debug_returns_empty_for_unrelated_query():
     assert body["sources"] == []
 
 
+def test_manager_can_rebuild_knowledge_index():
+    token = login_token("manager1", "manager123")
+
+    response = client.post(
+        "/knowledge/rebuild-index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "rebuilt"
+    assert body["indexed_count"] > 0
+    assert body["deleted_count"] >= 0
+
+
+def test_rebuild_knowledge_index_requires_manager_role():
+    token = login_token("agent1", "agent123")
+
+    response = client.post(
+        "/knowledge/rebuild-index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "required role: manager"
+
+
 def test_knowledge_write_requires_login():
     response = client.post(
         "/knowledge",

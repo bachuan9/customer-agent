@@ -40,6 +40,7 @@ const knowledgeList = document.getElementById("knowledgeList");
 const saveKnowledgeBtn = document.getElementById("saveKnowledgeBtn");
 const cancelKnowledgeEditBtn = document.getElementById("cancelKnowledgeEditBtn");
 const refreshKnowledgeBtn = document.getElementById("refreshKnowledgeBtn");
+const rebuildKnowledgeIndexBtn = document.getElementById("rebuildKnowledgeIndexBtn");
 const knowledgeSearchInput = document.getElementById("knowledgeSearch");
 const knowledgeTagFilterInput = document.getElementById("knowledgeTagFilter");
 const searchKnowledgeBtn = document.getElementById("searchKnowledgeBtn");
@@ -614,6 +615,7 @@ function updateKnowledgePermissionUI() {
   const allowed = canManageKnowledge();
   saveKnowledgeBtn.disabled = !allowed;
   cancelKnowledgeEditBtn.disabled = !allowed;
+  rebuildKnowledgeIndexBtn.disabled = !allowed;
   knowledgeTitleInput.disabled = !allowed;
   knowledgeTagsInput.disabled = !allowed;
   knowledgeContentInput.disabled = !allowed;
@@ -684,8 +686,9 @@ function getKnowledgePermissionMessage(status) {
 }
 
 async function loadKnowledgeArticles(showBubble = false) {
+  let loadingBubble = null;
   if (showBubble) {
-    appendBubble("agent", "正在刷新知识库列表...");
+    loadingBubble = appendBubble("agent", "正在刷新知识库列表...");
   }
 
   try {
@@ -695,8 +698,14 @@ async function loadKnowledgeArticles(showBubble = false) {
     }
     const items = await res.json();
     renderKnowledgeList(items);
+    if (loadingBubble) {
+      setBubbleText(loadingBubble, `知识库列表已刷新，共 ${items.length} 条。`);
+    }
   } catch (err) {
     knowledgeList.innerHTML = '<p class="empty-state">知识库加载失败，请确认后端正在运行。</p>';
+    if (loadingBubble) {
+      setBubbleText(loadingBubble, "知识库刷新失败，请确认后端正在运行。");
+    }
   }
 }
 
@@ -856,6 +865,36 @@ async function deleteKnowledgeArticle(articleId) {
     appendBubble("agent", "知识库内容已删除。");
   } catch (err) {
     appendBubble("agent", "知识库删除失败，请确认后端服务正在运行。");
+  }
+}
+
+async function rebuildKnowledgeIndex() {
+  if (!canManageKnowledge()) {
+    appendBubble("agent", getKnowledgePermissionMessage(403));
+    return;
+  }
+
+  rebuildKnowledgeIndexBtn.disabled = true;
+  rebuildKnowledgeIndexBtn.textContent = "重建中...";
+  try {
+    const res = await fetch(`${API_BASE}/knowledge/rebuild-index`, {
+      method: "POST",
+      headers: buildAuthHeaders(),
+    });
+    if (!res.ok) {
+      appendBubble("agent", getKnowledgePermissionMessage(res.status));
+      return;
+    }
+    const result = await res.json();
+    appendBubble(
+      "agent",
+      `RAG索引已重建：清理旧知识块 ${result.deleted_count} 条，新建知识块 ${result.indexed_count} 条。`
+    );
+  } catch (err) {
+    appendBubble("agent", "RAG索引重建失败，请确认后端服务正在运行。");
+  } finally {
+    rebuildKnowledgeIndexBtn.disabled = !canManageKnowledge();
+    rebuildKnowledgeIndexBtn.textContent = "重建RAG索引";
   }
 }
 
@@ -1922,6 +1961,8 @@ knowledgeBtn.addEventListener("click", async () => {
 refreshKnowledgeBtn.addEventListener("click", async () => {
   await loadKnowledgeArticles(true);
 });
+
+rebuildKnowledgeIndexBtn.addEventListener("click", rebuildKnowledgeIndex);
 
 searchKnowledgeBtn.addEventListener("click", async () => {
   await loadKnowledgeArticles(true);
