@@ -1,12 +1,8 @@
 import os
 import re
-import json
-import math
-import hashlib
 from typing import Any, Dict, List, Optional
 
 MIN_KNOWLEDGE_SCORE = 3
-LOCAL_EMBEDDING_DIMENSIONS = 64
 KNOWLEDGE_KEYWORD_GROUPS = {
     "shipping": [
         "物流",
@@ -102,6 +98,13 @@ from app.storage.db import (
     update_complaint_note as db_update_complaint_note,
     update_logistics_status as db_update_logistics_status,
     update_order_status as db_update_order_status,
+)
+from app.services.embedding_provider import (
+    cosine_similarity,
+    create_local_embedding,
+    get_embedding_provider,
+    parse_embedding,
+    serialize_embedding,
 )
 
 
@@ -286,56 +289,9 @@ def get_knowledge_chunk_title(section: str, fallback: str = "") -> str:
     return fallback
 
 
-def normalize_embedding_text(text: str) -> str:
-    return text.lower().replace(" ", "")
-
-
-def create_local_embedding(text: str, dimensions: int = LOCAL_EMBEDDING_DIMENSIONS) -> List[float]:
-    vector = [0.0] * dimensions
-    normalized_text = normalize_embedding_text(text)
-    if not normalized_text:
-        return vector
-
-    for char in normalized_text:
-        digest = hashlib.md5(char.encode("utf-8")).hexdigest()
-        index = int(digest[:8], 16) % dimensions
-        vector[index] += 1.0
-
-    length = math.sqrt(sum(value * value for value in vector))
-    if length == 0:
-        return vector
-    return [round(value / length, 6) for value in vector]
-
-
-def serialize_embedding(embedding: List[float]) -> str:
-    return json.dumps(embedding, ensure_ascii=False)
-
-
-def parse_embedding(value: Optional[str]) -> List[float]:
-    if not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [float(item) for item in parsed if isinstance(item, (int, float))]
-
-
-def cosine_similarity(left: List[float], right: List[float]) -> float:
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    dot_product = sum(a * b for a, b in zip(left, right))
-    left_length = math.sqrt(sum(a * a for a in left))
-    right_length = math.sqrt(sum(b * b for b in right))
-    if left_length == 0 or right_length == 0:
-        return 0.0
-    return dot_product / (left_length * right_length)
-
-
 def rebuild_knowledge_index() -> Dict[str, Any]:
     deleted_count = clear_knowledge_chunks()
+    embedding_provider = get_embedding_provider()
     chunks = []
 
     for knowledge_path in list_knowledge_files():
@@ -351,7 +307,7 @@ def rebuild_knowledge_index() -> Dict[str, Any]:
                     source=source,
                     title=get_knowledge_chunk_title(section, fallback=source),
                     content=section,
-                    embedding=serialize_embedding(create_local_embedding(section)),
+                    embedding=serialize_embedding(embedding_provider.embed_text(section)),
                 )
             )
 
@@ -365,7 +321,7 @@ def rebuild_knowledge_index() -> Dict[str, Any]:
                 title=article["title"],
                 content=article_text,
                 tags=article["tags"],
-                embedding=serialize_embedding(create_local_embedding(article_text)),
+                embedding=serialize_embedding(embedding_provider.embed_text(article_text)),
             )
         )
 
@@ -446,7 +402,8 @@ def search_knowledge(query: str) -> Dict[str, Any]:
     if not knowledge_chunks:
         return {"found": False, "query": query, "matches": [], "sources": [], "error": "knowledge_not_found"}
 
-    query_embedding = create_local_embedding(query)
+    embedding_provider = get_embedding_provider()
+    query_embedding = embedding_provider.embed_text(query)
     scored_sections = []
     for chunk in knowledge_chunks:
         article_text = chunk["content"]

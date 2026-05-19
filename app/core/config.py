@@ -23,6 +23,7 @@ class Settings(BaseModel):
     llm_timeout_seconds: int = int(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "local_hash")
 
 
 settings = Settings()

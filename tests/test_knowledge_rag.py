@@ -1,9 +1,8 @@
 from app.services.agent import format_llm_tool_selection_reply
 from app.services.tool_registry import list_function_calling_tools
+from app.services.embedding_provider import cosine_similarity, create_local_embedding, get_embedding_provider
 from app.services.tools import (
-    cosine_similarity,
     create_complaint,
-    create_local_embedding,
     extract_knowledge_keywords,
     handle_logistics_issue,
     handle_order_issue,
@@ -309,6 +308,19 @@ def test_local_embedding_similarity_prefers_related_text():
     unrelated_embedding = create_local_embedding("会员积分可以兑换优惠券")
 
     assert cosine_similarity(query_embedding, related_embedding) > cosine_similarity(query_embedding, unrelated_embedding)
+
+
+def test_embedding_provider_exposes_provider_name():
+    provider = get_embedding_provider()
+
+    assert provider.name == "local_hash"
+    assert len(provider.embed_text("物流 48 小时")) == 64
+
+
+def test_embedding_provider_falls_back_to_local_for_unknown_provider():
+    provider = get_embedding_provider("unknown-provider")
+
+    assert provider.name == "local_hash"
 
 
 def test_rebuild_knowledge_index_stores_chunk_embedding():
