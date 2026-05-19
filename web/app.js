@@ -48,6 +48,7 @@ const resetKnowledgeFilterBtn = document.getElementById("resetKnowledgeFilterBtn
 const knowledgePermissionHint = document.getElementById("knowledgePermissionHint");
 const ragDebugQueryInput = document.getElementById("ragDebugQuery");
 const ragDebugBtn = document.getElementById("ragDebugBtn");
+const ragEvalBtn = document.getElementById("ragEvalBtn");
 const ragDebugResult = document.getElementById("ragDebugResult");
 const ragDebugExamples = document.getElementById("ragDebugExamples");
 const chips = document.querySelectorAll(".chip");
@@ -744,6 +745,33 @@ function renderRagDebugResult(result) {
   `;
 }
 
+function renderRagEvaluationResult(result) {
+  ragDebugResult.innerHTML = `
+    <div class="rag-debug-summary">
+      <strong>RAG评测：${result.passed}/${result.total} 通过</strong>
+      <span>通过率：${Math.round((result.pass_rate || 0) * 100)}%</span>
+    </div>
+    ${(result.cases || [])
+      .map(
+        (item) => `
+          <article class="rag-debug-item">
+            <div class="rag-debug-meta">
+              <span>${item.passed ? "通过" : "失败"}</span>
+              <span>期望命中：${item.should_find ? "是" : "否"}</span>
+              <span>实际命中：${item.found ? "是" : "否"}</span>
+              <span>score: ${item.top_score ?? "无"}</span>
+            </div>
+            <strong>${escapeHtml(item.name)}</strong>
+            <p>问题：${escapeHtml(item.query)}</p>
+            <p>期望来源：${escapeHtml(item.expected_source || "无")}</p>
+            <p>实际来源：${escapeHtml((item.sources || []).join(", ") || "无")}</p>
+          </article>
+        `
+      )
+      .join("")}
+  `;
+}
+
 async function runRagDebug() {
   const query = ragDebugQueryInput.value.trim();
   if (!query) {
@@ -865,6 +893,23 @@ async function deleteKnowledgeArticle(articleId) {
     appendBubble("agent", "知识库内容已删除。");
   } catch (err) {
     appendBubble("agent", "知识库删除失败，请确认后端服务正在运行。");
+  }
+}
+
+async function runRagEvaluation() {
+  ragEvalBtn.disabled = true;
+  ragDebugResult.innerHTML = '<p class="empty-state">正在运行 RAG 评测...</p>';
+  try {
+    const res = await fetch(`${API_BASE}/knowledge/evaluate-rag`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const result = await res.json();
+    renderRagEvaluationResult(result);
+  } catch (err) {
+    ragDebugResult.innerHTML = '<p class="empty-state">RAG 评测失败，请确认后端服务正在运行。</p>';
+  } finally {
+    ragEvalBtn.disabled = false;
   }
 }
 
@@ -1975,6 +2020,7 @@ resetKnowledgeFilterBtn.addEventListener("click", async () => {
 });
 
 ragDebugBtn.addEventListener("click", runRagDebug);
+ragEvalBtn.addEventListener("click", runRagEvaluation);
 
 ragDebugQueryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {

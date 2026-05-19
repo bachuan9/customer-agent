@@ -2,13 +2,14 @@ from app.models.schemas import ChatRequest
 from app.core.config import settings
 from app.services.agent import (
     can_role_execute_tool,
+    detect_intent,
     run_agent,
     run_agent_with_steps,
     set_pending_llm_action,
 )
 from app.services.llm_client import LLMClientError
 from app.services.llm_reply import LLMReplyError
-from app.services.llm_agent import build_messages, extract_first_tool_call
+from app.services.llm_agent import LLMAgentError, build_messages, extract_first_tool_call
 from app.storage.db import fetch_tool_call_logs, get_order_status
 
 
@@ -54,6 +55,11 @@ def test_llm_prompt_guides_order_issue_to_combined_tool():
     assert "订单超时" in system_prompt
     assert "48小时未发货" in system_prompt
     assert "还没发货" in system_prompt
+
+
+def test_policy_question_is_detected_as_knowledge_search():
+    assert detect_intent("物流超时政策") == "search_knowledge"
+    assert detect_intent("会员积分规则") == "search_knowledge"
 
 
 def test_rbac_manager_can_update_order_but_agent_cannot():
@@ -120,6 +126,86 @@ def test_run_agent_with_steps_shows_llm_template_fallback_reply_source(monkeypat
     assert "执行模式：LLM Agent（本次调用了 LLM）" in result["steps"]
     assert "回复来源：LLM 工具结果模板" in result["steps"]
     assert "LLM 选择工具：query_order" in result["steps"]
+
+
+    assert result["trace"]["llm_fallback_error"] == "mock reply failed"
+
+
+def test_llm_search_knowledge_selection_populates_rag_trace(monkeypatch):
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    def fake_tool_selection(message):
+        return {
+            "tool_name": "search_knowledge",
+            "arguments": {"query": "\u7269\u6d41\u8d85\u65f6\u653f\u7b56"},
+            "tool_result": {
+                "found": True,
+                "query": "\u7269\u6d41\u8d85\u65f6\u653f\u7b56",
+                "matches": [
+                    {
+                        "content": "\u7269\u6d41\u8d85\u8fc7 48 \u5c0f\u65f6\u6ca1\u6709\u66f4\u65b0\uff0c\u53ef\u4ee5\u8054\u7cfb\u5ba2\u670d\u3002",
+                        "source": "docs/knowledge/shipping-policy.md",
+                        "score": 6.5,
+                        "keyword_score": 6,
+                        "embedding_score": 0.5,
+                        "retrieval_mode": "hybrid_keyword_embedding",
+                        "title": "\u7269\u6d41\u4e0e\u914d\u9001\u653f\u7b56",
+                        "source_type": "markdown",
+                        "match_reason": "\u76f8\u5173\u5ea6\u5206\u6570\uff1a6",
+                    }
+                ],
+                "sources": ["docs/knowledge/shipping-policy.md"],
+                "source": "docs/knowledge/shipping-policy.md",
+            },
+            "requires_confirmation": False,
+        }
+
+    def fake_llm_reply(message, selection):
+        raise LLMReplyError("mock reply failed")
+
+    monkeypatch.setattr("app.services.agent.run_llm_tool_selection", fake_tool_selection)
+    monkeypatch.setattr("app.services.agent.generate_llm_reply", fake_llm_reply)
+
+    try:
+        result = run_agent_with_steps(ChatRequest(user_id="pytest-llm-rag-trace", message="\u7269\u6d41\u8d85\u65f6\u653f\u7b56", role="agent"))
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert result["trace"]["rag"]["found"] is True
+    assert result["trace"]["rag"]["sources"] == ["docs/knowledge/shipping-policy.md"]
+    assert result["trace"]["rag"]["retrieval_mode"] == "hybrid_keyword_embedding"
+    assert result["trace"]["rag"]["keyword_score"] == 6
+    assert result["trace"]["rag"]["embedding_score"] == 0.5
+    assert result["trace"]["llm_fallback_error"] == "mock reply failed"
+
+
+
+def test_policy_question_uses_rag_after_llm_tool_selection_fails(monkeypatch):
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    def fake_tool_selection(message):
+        raise LLMAgentError("LLM did not return a tool call")
+
+    monkeypatch.setattr("app.services.agent.run_llm_tool_selection", fake_tool_selection)
+
+    try:
+        result = run_agent_with_steps(
+            ChatRequest(
+                user_id="pytest-policy-rag-fallback",
+                message="\u7269\u6d41\u8d85\u65f6\u653f\u7b56",
+                role="agent",
+            )
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert result["trace"]["intent"] == "search_knowledge"
+    assert result["trace"]["execution_mode"] == "rule_agent"
+    assert result["trace"]["rag"]["found"] is True
+    assert "docs/knowledge/shipping-policy.md" in result["trace"]["rag"]["sources"]
+    assert "\u6211\u53ea\u80fd\u67e5\u8be2\u8ba2\u5355\u6216\u7269\u6d41" not in result["reply"]
 
 
 def test_run_agent_with_steps_traces_confirmation_requirement(monkeypatch):

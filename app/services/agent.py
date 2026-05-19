@@ -58,6 +58,22 @@ COMPLAINT_STATUS_KEYWORDS = {
 
 
 KNOWLEDGE_KEYWORDS = {
+    "政策",
+    "规则",
+    "知识库",
+    "物流政策",
+    "物流规则",
+    "物流超时",
+    "超时政策",
+    "超时规则",
+    "发货政策",
+    "发货规则",
+    "配送政策",
+    "配送规则",
+    "会员政策",
+    "会员规则",
+    "积分规则",
+    "优惠券规则",
     "退货",
     "售后",
     "运费",
@@ -1341,6 +1357,8 @@ def run_agent_trace(req):
             selection = run_llm_tool_selection(message)
             trace["execution_mode"] = "llm_agent"
             trace["selection"] = selection
+            if selection.get("tool_name") == "search_knowledge":
+                trace["rag"] = build_rag_trace(selection.get("tool_result"))
             print(f"[DEBUG] LLM selected tool: {selection['tool_name']} {selection['arguments']}")
             if selection.get("requires_confirmation"):
                 print("[DEBUG] LLM selected mutating tool; confirmation required")
@@ -1364,6 +1382,7 @@ def run_agent_trace(req):
                 return trace
             except (LLMClientError, LLMReplyError) as exc:
                 print(f"[DEBUG] LLM reply fallback to template: {exc}")
+                trace["llm_fallback_error"] = str(exc)
             trace["reply"] = format_llm_tool_selection_reply(selection)
             trace["reply_source"] = "llm_template_fallback"
             return trace

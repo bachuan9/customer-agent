@@ -3,6 +3,32 @@ import re
 from typing import Any, Dict, List, Optional
 
 MIN_KNOWLEDGE_SCORE = 3
+RAG_EVAL_CASES = [
+    {
+        "name": "物流超时政策",
+        "query": "我的物流 48 小时没有更新",
+        "should_find": True,
+        "expected_source": "docs/knowledge/shipping-policy.md",
+    },
+    {
+        "name": "退货时效政策",
+        "query": "7 天无理由退货规则",
+        "should_find": True,
+        "expected_source": "docs/knowledge/return-policy.md",
+    },
+    {
+        "name": "会员权益政策",
+        "query": "会员积分和优惠券怎么用",
+        "should_find": True,
+        "expected_source": "docs/knowledge/membership-policy.md",
+    },
+    {
+        "name": "无关问题拒答",
+        "query": "平台支持虚拟币提现吗",
+        "should_find": False,
+        "expected_source": None,
+    },
+]
 KNOWLEDGE_KEYWORD_GROUPS = {
     "shipping": [
         "物流",
@@ -456,6 +482,43 @@ def search_knowledge(query: str) -> Dict[str, Any]:
         "matches": matches,
         "sources": sources,
         "source": sources[0] if sources else None,
+    }
+
+
+def run_rag_evaluation() -> Dict[str, Any]:
+    cases = []
+    passed_count = 0
+
+    for eval_case in RAG_EVAL_CASES:
+        result = search_knowledge(eval_case["query"])
+        sources = result.get("sources", [])
+        found = result.get("found", False)
+        expected_source = eval_case["expected_source"]
+        passed = found == eval_case["should_find"]
+        if expected_source:
+            passed = passed and expected_source in sources
+
+        if passed:
+            passed_count += 1
+
+        cases.append({
+            "name": eval_case["name"],
+            "query": eval_case["query"],
+            "should_find": eval_case["should_find"],
+            "found": found,
+            "expected_source": expected_source,
+            "sources": sources,
+            "top_score": result["matches"][0]["score"] if result.get("matches") else None,
+            "passed": passed,
+        })
+
+    total = len(cases)
+    return {
+        "total": total,
+        "passed": passed_count,
+        "failed": total - passed_count,
+        "pass_rate": round(passed_count / total, 4) if total else 0,
+        "cases": cases,
     }
 
 

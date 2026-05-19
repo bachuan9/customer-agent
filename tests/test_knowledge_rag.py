@@ -8,6 +8,7 @@ from app.services.tools import (
     handle_order_issue,
     query_logistics_by_order,
     rebuild_knowledge_index,
+    run_rag_evaluation,
     search_knowledge,
 )
 from app.storage.db import fetch_knowledge_chunks, get_complaint_by_id, get_connection, insert_knowledge_article
@@ -340,3 +341,13 @@ def test_search_knowledge_returns_embedding_scores():
     assert result["matches"][0]["retrieval_mode"] == "hybrid_keyword_embedding"
     assert "keyword_score" in result["matches"][0]
     assert "embedding_score" in result["matches"][0]
+
+
+def test_run_rag_evaluation_returns_pass_rate_and_cases():
+    result = run_rag_evaluation()
+
+    assert result["total"] >= 4
+    assert result["passed"] == result["total"]
+    assert result["failed"] == 0
+    assert result["pass_rate"] == 1
+    assert all("query" in item for item in result["cases"])

@@ -1272,6 +1272,17 @@ def test_knowledge_search_debug_returns_empty_for_unrelated_query():
     assert body["sources"] == []
 
 
+def test_knowledge_rag_evaluation_endpoint_returns_cases():
+    response = client.get("/knowledge/evaluate-rag")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] >= 4
+    assert body["passed"] == body["total"]
+    assert body["failed"] == 0
+    assert body["cases"]
+
+
 def test_manager_can_rebuild_knowledge_index():
     token = login_token("manager1", "manager123")
 

@@ -68,7 +68,7 @@ from app.storage.db import (
     update_user_active,
     update_user_role,
 )
-from app.services.tools import get_complaint_detail, rebuild_knowledge_index, search_knowledge
+from app.services.tools import get_complaint_detail, rebuild_knowledge_index, run_rag_evaluation, search_knowledge
 
 router = APIRouter()
 
@@ -613,6 +613,11 @@ def knowledge_articles(include_disabled: bool = True, query: str = None, tag: st
 @router.get("/knowledge/search-debug")
 def knowledge_search_debug(query: str) -> dict:
     return search_knowledge(query)
+
+
+@router.get("/knowledge/evaluate-rag")
+def evaluate_rag() -> dict:
+    return run_rag_evaluation()
 
 
 @router.post("/knowledge/rebuild-index")
