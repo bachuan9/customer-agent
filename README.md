@@ -79,17 +79,17 @@ LLM 建议写工具
 
 ## 快速开始
 
-创建并激活虚拟环境：
+创建并激活 Python 3.11 虚拟环境：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\Activate.ps1
 ```
 
 安装依赖：
 
 ```powershell
-pip install -r requirements.txt
+.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 复制配置文件：
@@ -101,7 +101,7 @@ Copy-Item .env.example .env
 启动后端：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
 访问地址：
@@ -153,7 +153,7 @@ DEEPSEEK_API_KEY=你的真实key
 运行全部自动测试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv311\Scripts\python.exe -m pytest -q
 ```
 
 检查前端 JavaScript 语法：
@@ -165,7 +165,7 @@ node --check web\app.js
 检查 Python 文件能否编译：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app
 ```
 
 当前完整检查应看到：
@@ -225,9 +225,9 @@ practice/
 
 ```powershell
 git status --short
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app
 ```
 
 更多启动、测试和排错步骤见 [运行与测试手册](docs/运行与测试手册.md) 和 [开发手册](docs/development-guide.md)。
