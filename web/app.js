@@ -49,6 +49,7 @@ const knowledgePermissionHint = document.getElementById("knowledgePermissionHint
 const ragDebugQueryInput = document.getElementById("ragDebugQuery");
 const ragDebugBtn = document.getElementById("ragDebugBtn");
 const ragEvalBtn = document.getElementById("ragEvalBtn");
+const agentEvalBtn = document.getElementById("agentEvalBtn");
 const ragDebugResult = document.getElementById("ragDebugResult");
 const ragDebugExamples = document.getElementById("ragDebugExamples");
 const chips = document.querySelectorAll(".chip");
@@ -781,6 +782,35 @@ function renderRagEvaluationResult(result) {
   `;
 }
 
+function renderAgentEvaluationResult(result) {
+  ragDebugResult.innerHTML = `
+    <div class="rag-debug-summary">
+      <strong>Agent评测：${result.passed}/${result.total} 通过</strong>
+      <span>通过率：${Math.round((result.pass_rate || 0) * 100)}%</span>
+    </div>
+    ${(result.cases || [])
+      .map(
+        (item) => `
+          <article class="rag-debug-item">
+            <div class="rag-debug-meta">
+              <span>${item.passed ? "通过" : "失败"}</span>
+              <span>预期意图：${escapeHtml(item.expected_intent || "无")}</span>
+              <span>实际意图：${escapeHtml(item.actual_intent || "无")}</span>
+              <span>回复来源：${escapeHtml(item.reply_source || "无")}</span>
+              <span>RAG命中：${item.rag_found ? "是" : "否"}</span>
+            </div>
+            <strong>${escapeHtml(item.name)}</strong>
+            <p>输入：${escapeHtml((item.messages || []).join(" -> "))}</p>
+            <p>RAG来源：${escapeHtml((item.rag_sources || []).join(", ") || "无")}</p>
+            <p>失败原因：${escapeHtml((item.failures || []).join("；") || "无")}</p>
+            <pre>${escapeHtml(item.reply || "")}</pre>
+          </article>
+        `
+      )
+      .join("")}
+  `;
+}
+
 async function runRagDebug() {
   const query = ragDebugQueryInput.value.trim();
   if (!query) {
@@ -919,6 +949,23 @@ async function runRagEvaluation() {
     ragDebugResult.innerHTML = '<p class="empty-state">RAG 评测失败，请确认后端服务正在运行。</p>';
   } finally {
     ragEvalBtn.disabled = false;
+  }
+}
+
+async function runAgentEvaluation() {
+  agentEvalBtn.disabled = true;
+  ragDebugResult.innerHTML = '<p class="empty-state">正在运行 Agent 评测...</p>';
+  try {
+    const res = await fetch(`${API_BASE}/agent/evaluate`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const result = await res.json();
+    renderAgentEvaluationResult(result);
+  } catch (err) {
+    ragDebugResult.innerHTML = '<p class="empty-state">Agent 评测失败，请确认后端服务正在运行。</p>';
+  } finally {
+    agentEvalBtn.disabled = false;
   }
 }
 
@@ -2030,6 +2077,7 @@ resetKnowledgeFilterBtn.addEventListener("click", async () => {
 
 ragDebugBtn.addEventListener("click", runRagDebug);
 ragEvalBtn.addEventListener("click", runRagEvaluation);
+agentEvalBtn.addEventListener("click", runAgentEvaluation);
 
 ragDebugQueryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {

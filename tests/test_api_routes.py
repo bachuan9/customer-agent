@@ -1283,6 +1283,17 @@ def test_knowledge_rag_evaluation_endpoint_returns_cases():
     assert body["cases"]
 
 
+def test_agent_evaluation_endpoint_returns_cases():
+    response = client.get("/agent/evaluate")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] >= 4
+    assert body["passed"] == body["total"]
+    assert body["failed"] == 0
+    assert any(item["name"] == "多轮上下文补全物流" for item in body["cases"])
+
+
 def test_manager_can_rebuild_knowledge_index():
     token = login_token("manager1", "manager123")
 

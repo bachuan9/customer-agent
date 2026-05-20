@@ -13,6 +13,7 @@
 - LLM Agent：支持 DeepSeek Function Calling 选择工具，并支持订单、物流、知识库多工具协作和客服处理建议。
 - 多轮上下文：基于 session memory 记住最近订单号/物流号，支持“查订单 A101”后继续追问“那物流呢”。
 - Agent Trace：结构化展示并持久化回看意图识别、执行模式、工具选择、工具参数、工具结果、RAG 命中依据、人工确认要求和 LLM 降级原因。
+- Agent 评测：提供自动化评测集，覆盖意图识别、工具调用、RAG 命中、多轮上下文和组合工具链路。
 - 人工确认：写操作先进入待确认状态，用户确认后才执行。
 - 智能优先级：订单/物流异常确认创建投诉时自动标记高优先级，并分配给客服主管。
 - 主管队列：支持一键查看客服主管处理中高优先级投诉，并在首页展示待处理数量。
@@ -37,6 +38,31 @@ web/app.js
 -> app/storage/db.py
 -> app/services/llm_reply.py
 -> web/app.js
+```
+
+## Agent / RAG 架构
+
+```text
+用户输入
+-> FastAPI /chat
+-> Agent 意图识别
+-> LLM Function Calling 或规则兜底
+-> tool_registry 选择并执行工具
+-> tools.py 组合订单、物流、投诉、知识库能力
+-> SQLite 持久化业务数据、会话记忆、工具日志
+-> RAG 检索知识 chunk，并计算关键词分数和 embedding 分数
+-> llm_reply 基于工具结果或 RAG 命中内容生成自然客服回复
+-> Agent Trace 返回前端展示执行过程
+```
+
+工程化能力：
+
+```text
+Session Memory：保存最近订单号/物流号，支持多轮上下文补全。
+RAG Evaluation：验证知识库检索是否命中预期来源。
+Agent Evaluation：验证意图识别、工具调用、RAG、多轮上下文和组合工具链路。
+Trace Observability：展示执行模式、工具参数、RAG 分数、回复来源和降级原因。
+Fallback：LLM 工具选择或回复生成失败时，自动退回规则 Agent 或模板回复。
 ```
 
 写操作会多一层安全确认：
@@ -145,7 +171,7 @@ node --check web\app.js
 当前完整检查应看到：
 
 ```text
-pytest: 95 passed
+pytest: 111 passed
 node --check web/app.js: passed
 python -m compileall app: passed
 ```
@@ -204,4 +230,4 @@ node --check web\app.js
 .\.venv\Scripts\python.exe -m compileall app
 ```
 
-更多启动、测试和排错步骤见 [开发手册](docs/development-guide.md)。
+更多启动、测试和排错步骤见 [运行与测试手册](docs/运行与测试手册.md) 和 [开发手册](docs/development-guide.md)。

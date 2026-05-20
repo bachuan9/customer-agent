@@ -24,6 +24,7 @@ from app.models.schemas import (
     UserRoleUpdateRequest,
 )
 from app.services.agent import list_complaints, run_agent_with_steps
+from app.services.agent_evaluation import run_agent_evaluation
 from app.services.tool_registry import list_function_calling_tools
 from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
@@ -618,6 +619,11 @@ def knowledge_search_debug(query: str) -> dict:
 @router.get("/knowledge/evaluate-rag")
 def evaluate_rag() -> dict:
     return run_rag_evaluation()
+
+
+@router.get("/agent/evaluate")
+def evaluate_agent() -> dict:
+    return run_agent_evaluation()
 
 
 @router.post("/knowledge/rebuild-index")

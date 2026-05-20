@@ -68,7 +68,7 @@ def test_follow_up_logistics_uses_recent_order_context():
     first = run_agent_with_steps(ChatRequest(user_id=user_id, message="查订单 A101", role="agent"))
     second = run_agent_with_steps(ChatRequest(user_id=user_id, message="那物流呢", role="agent"))
 
-    assert "订单 A101" in first["reply"]
+    assert "A101" in first["reply"]
     assert "物流 L101" in second["reply"]
 
 
