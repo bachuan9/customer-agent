@@ -321,9 +321,17 @@ function renderAgentTrace(trace = {}) {
 
   const selection = trace.selection || {};
   const rag = trace.rag || {};
+  const replySourceLabels = {
+    rule_template: "规则模板回复",
+    llm_reply: "LLM 基于工具结果生成",
+    rag_llm_reply: "RAG 命中后由 LLM 生成",
+    llm_template_fallback: "LLM 失败后使用工具模板",
+  };
   const toolName = selection.tool_name || "无";
   const fallback = trace.llm_fallback_error || "无";
   const requiresConfirmation = selection.requires_confirmation ? "是" : "否";
+  const llmReplyGenerated = trace.llm_reply_generated ? "是" : "否";
+  const replySource = replySourceLabels[trace.reply_source] || trace.reply_source || "unknown";
   const summarizeJson = (value) => {
     if (!value) return "无";
     const text = JSON.stringify(value);
@@ -332,7 +340,8 @@ function renderAgentTrace(trace = {}) {
   const rows = [
     ["意图", trace.intent || "unknown"],
     ["执行模式", trace.execution_mode || "unknown"],
-    ["回复来源", trace.reply_source || "unknown"],
+    ["回复来源", replySource],
+    ["LLM是否生成最终回复", llmReplyGenerated],
     ["LLM选择工具", toolName],
     ["是否需要确认", requiresConfirmation],
     ["工具参数", summarizeJson(selection.arguments)],

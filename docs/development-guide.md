@@ -230,6 +230,8 @@ manager1 / manager123
 Agent 回复里能参考知识库内容。
 ```
 
+如果 `.env` 中开启了 `LLM_ENABLED=true`，RAG 命中后会优先让 LLM 基于知识库内容生成自然客服回复；如果 LLM 生成失败，会自动退回到规则模板，避免用户拿不到答案。
+
 RAG 调试面板会显示：
 
 ```text
@@ -255,6 +257,17 @@ session_messages：Agent 内部记忆，保存 waiting_confirm、pending_update 
 Agent 执行步骤用于回看当时经过了哪些工具、是否调用 LLM、回复来源是什么。
 内部状态用于多轮流程控制，不应该直接当成聊天内容展示。
 ```
+
+Agent 还会在 `session_messages` 里保存最近一次查询上下文，例如最近查过的订单号和物流号：
+
+```text
+用户：查订单 A101
+Agent：记住最近订单号 A101
+用户：那物流呢
+Agent：从最近订单号 A101 查询关联物流 L101
+```
+
+这个能力用于支持简单多轮追问，让用户不必每句话都重复订单号或物流号。
 
 手动测试：
 
@@ -543,6 +556,9 @@ PATCH  /complaint-notes/{note_id}
 DELETE /complaint-notes/{note_id}
 
 GET    /knowledge
+GET    /knowledge/search-debug
+GET    /knowledge/evaluate-rag
+POST   /knowledge/rebuild-index
 GET    /knowledge/{article_id}
 POST   /knowledge
 PATCH  /knowledge/{article_id}

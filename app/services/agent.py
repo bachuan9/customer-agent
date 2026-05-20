@@ -5,7 +5,7 @@ from app.storage.database_session import DatabaseSessionStore
 from app.storage.db import insert_tool_call_log
 from app.services.llm_agent import LLMAgentError, run_llm_tool_selection
 from app.services.llm_client import LLMClientError
-from app.services.llm_reply import LLMReplyError, generate_llm_reply
+from app.services.llm_reply import LLMReplyError, generate_llm_reply, generate_rag_llm_reply
 from app.services.tool_registry import call_tool, format_tool_error
 
 
@@ -152,22 +152,26 @@ def format_logistics_status_reply(tracking_no, status):
     return f"您的物流 {tracking_no} 当前状态是：{label}。"
 
 
-def check_order(order_id):
+def check_order(order_id, user_id=None):
     result = call_tool("query_order", {"order_no": order_id})
     if result.get("error"):
         return format_tool_error(result)
     if not result["found"]:
         return "未找到"
+    if user_id:
+        set_recent_context(user_id, order_no=order_id)
     return format_order_status_reply(order_id, result["status"])
 
 
 
-def check_logistics(tracking_no):
+def check_logistics(tracking_no, user_id=None):
     result = call_tool("query_logistics", {"tracking_no": tracking_no})
     if result.get("error"):
         return format_tool_error(result)
     if not result["found"]:
         return "未找到"
+    if user_id:
+        set_recent_context(user_id, tracking_no=tracking_no, order_no=result.get("order_no"))
     return format_logistics_status_reply(tracking_no, result["status"])
 
 
@@ -219,6 +223,68 @@ def should_suggest_complaint(message):
 
 
 PENDING_COMPLAINT_CONTINUE_INTENTS = {"create_complaint"}
+
+
+CONTEXT_LOGISTICS_FOLLOW_UP_KEYWORDS = {
+    "那物流呢",
+    "物流呢",
+    "查下物流",
+    "查一下物流",
+    "它的物流",
+    "这个订单的物流",
+}
+
+
+CONTEXT_ORDER_FOLLOW_UP_KEYWORDS = {
+    "那订单呢",
+    "订单呢",
+    "查下订单",
+    "查一下订单",
+    "它的订单",
+    "这个物流的订单",
+}
+
+
+def get_recent_context(user_id):
+    for item in reversed(MEMORY.get(user_id)):
+        if isinstance(item, dict) and item.get("type") == "recent_context":
+            return item
+    return {}
+
+
+def set_recent_context(user_id, **context):
+    recent = get_recent_context(user_id)
+    recent.update({key: value for key, value in context.items() if value})
+    recent["type"] = "recent_context"
+    MEMORY.append(user_id, recent)
+
+
+def is_context_logistics_follow_up(message):
+    return any(keyword in message for keyword in CONTEXT_LOGISTICS_FOLLOW_UP_KEYWORDS)
+
+
+def is_context_order_follow_up(message):
+    return any(keyword in message for keyword in CONTEXT_ORDER_FOLLOW_UP_KEYWORDS)
+
+
+def remember_tool_result_context(user_id, tool_name, result):
+    if not isinstance(result, dict):
+        return
+
+    if tool_name == "query_order" and result.get("found"):
+        set_recent_context(user_id, order_no=result.get("order_no"))
+        return
+
+    if tool_name == "query_logistics" and result.get("found"):
+        set_recent_context(user_id, tracking_no=result.get("tracking_no"), order_no=result.get("order_no"))
+        return
+
+    if tool_name == "query_logistics_by_order" and result.get("found"):
+        set_recent_context(user_id, order_no=result.get("order_no"), tracking_no=result.get("tracking_no"))
+        return
+
+    if tool_name in {"handle_order_issue", "handle_logistics_issue"} and result.get("found"):
+        set_recent_context(user_id, order_no=result.get("order_no"), tracking_no=result.get("tracking_no"))
 
 
 # 4. 意图识别：判断用户这句话想做什么。
@@ -895,6 +961,8 @@ def build_agent_steps(
 
     if reply_source == "llm_reply":
         steps.append("回复来源：LLM 润色生成")
+    elif reply_source == "rag_llm_reply":
+        steps.append("回复来源：RAG 命中后由 LLM 生成")
     elif reply_source == "llm_template_fallback":
         steps.append("回复来源：LLM 工具结果模板")
     else:
@@ -1250,7 +1318,12 @@ def handle_intent(message, user_id, intent, pending_existing):
         # 订单号默认以 A 开头
         order_id = extract_id(message, "A")
         if order_id:
-            return check_order(order_id)
+            return check_order(order_id, user_id)
+        if is_context_order_follow_up(message):
+            recent = get_recent_context(user_id)
+            recent_order_no = recent.get("order_no")
+            if recent_order_no:
+                return check_order(recent_order_no, user_id)
         return "没有识别到订单号，请写在句子里，比如：查订单 A001"
 
     # 如果包含“物流”，就查物流
@@ -1258,7 +1331,21 @@ def handle_intent(message, user_id, intent, pending_existing):
         # 物流单号默认以 L 开头
         tracking_no = extract_id(message, "L")
         if tracking_no:
-            return check_logistics(tracking_no)
+            return check_logistics(tracking_no, user_id)
+        if is_context_logistics_follow_up(message):
+            recent = get_recent_context(user_id)
+            recent_tracking_no = recent.get("tracking_no")
+            if recent_tracking_no:
+                return check_logistics(recent_tracking_no, user_id)
+            recent_order_no = recent.get("order_no")
+            if recent_order_no:
+                result = call_tool("query_logistics_by_order", {"order_no": recent_order_no})
+                if result.get("error"):
+                    return format_tool_error(result)
+                if not result["found"]:
+                    return f"暂时没有查到订单 {recent_order_no} 的关联物流。"
+                set_recent_context(user_id, order_no=recent_order_no, tracking_no=result.get("tracking_no"))
+                return format_logistics_status_reply(result["tracking_no"], result["status"])
         return "没有识别到物流号，请写在句子里，比如：查物流 L002"
 
     # 其他情况给提示
@@ -1299,6 +1386,7 @@ def run_agent_trace(req):
         pending_existing = get_pending_complaint(user_id)
         order_no = extract_id(message, "A")
         result = call_tool("handle_order_issue", {"order_no": order_no, "query": message})
+        set_recent_context(user_id, order_no=order_no, tracking_no=result.get("tracking_no"))
         trace["rag"] = build_rag_trace(result.get("knowledge_result"))
         if result.get("suggest_complaint"):
             set_pending_complaint(
@@ -1327,6 +1415,7 @@ def run_agent_trace(req):
         pending_existing = get_pending_complaint(user_id)
         tracking_no = extract_id(message, "L")
         result = call_tool("handle_logistics_issue", {"tracking_no": tracking_no, "query": message})
+        set_recent_context(user_id, tracking_no=tracking_no, order_no=result.get("order_no"))
         trace["rag"] = build_rag_trace(result.get("knowledge_result"))
         if result.get("suggest_complaint"):
             set_pending_complaint(
@@ -1357,6 +1446,7 @@ def run_agent_trace(req):
             selection = run_llm_tool_selection(message)
             trace["execution_mode"] = "llm_agent"
             trace["selection"] = selection
+            remember_tool_result_context(user_id, selection.get("tool_name"), selection.get("tool_result"))
             if selection.get("tool_name") == "search_knowledge":
                 trace["rag"] = build_rag_trace(selection.get("tool_result"))
             print(f"[DEBUG] LLM selected tool: {selection['tool_name']} {selection['arguments']}")
@@ -1407,6 +1497,14 @@ def run_agent_trace(req):
     if intent == "search_knowledge":
         result = call_tool("search_knowledge", {"query": message})
         trace["rag"] = build_rag_trace(result)
+        if settings.llm_enabled and result.get("found"):
+            try:
+                trace["reply"] = generate_rag_llm_reply(message, result)
+                trace["llm_reply_generated"] = True
+                trace["reply_source"] = "rag_llm_reply"
+                return trace
+            except (LLMClientError, LLMReplyError) as exc:
+                trace["llm_fallback_error"] = str(exc)
         trace["reply"] = format_llm_tool_selection_reply(
             {
                 "tool_name": "search_knowledge",

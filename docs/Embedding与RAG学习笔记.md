@@ -502,3 +502,85 @@ hybrid retrieval：关键词分数 + embedding 相似度的混合检索。
 ```text
 RAG 不是让大模型凭空回答，而是先从知识库找资料，再让 Agent 基于资料回答。
 ```
+
+
+## 13. RAG Evaluation 是什么
+
+`RAG Evaluation` 可以理解成 RAG 的“小考试”。
+
+我们先准备几条固定测试问题，然后检查 `search_knowledge(query)` 能不能命中预期知识来源。
+
+```text
+物流超时 -> 应该命中 shipping-policy.md
+7 天退货 -> 应该命中 return-policy.md
+会员积分 -> 应该命中 membership-policy.md
+完全无关的问题 -> 应该没有命中
+```
+
+这一步调用的核心函数是：
+
+```text
+search_knowledge(query)
+```
+
+它会返回：
+
+```text
+是否命中知识库
+命中了哪个知识来源
+关键词分数和 embedding 分数
+```
+
+为什么这一步重要：RAG 不是只要“能回答”就算完成，还要能稳定地找对资料。评测集就是用固定问题反复检查：切片、embedding provider、混合检索、索引重建有没有正常工作。
+
+面试时可以这样说：
+
+```text
+我在项目里给 RAG 做了 evaluation workflow，用固定 case 验证检索是否命中预期知识来源，避免修改 embedding 或检索规则后出现质量退化。
+```
+
+## 14. RAG Answer Generation 是什么
+
+前面做的是“检索”：用户问问题后，`search_knowledge(query)` 负责从知识库里找相关资料。
+
+这一步做的是“生成”：如果知识库命中了可靠内容，就把“用户原话 + RAG 命中结果”交给 LLM，让它生成更像真实客服的回复。
+
+```text
+用户问题
+-> search_knowledge(query)
+-> 找到 matches 和 sources
+-> generate_rag_llm_reply(message, knowledge_result)
+-> LLM 基于知识库内容生成回复
+-> 如果 LLM 失败，退回规则模板
+```
+
+为什么不直接让 LLM 自己回答：因为客服系统需要可控、可追溯。RAG 先给 LLM 提供知识库依据，LLM 只负责把这些依据组织成自然语言，这样能减少胡编乱造。
+
+面试时可以这样说：
+
+```text
+我把 RAG 拆成 retrieval 和 answer generation 两步：先用混合检索找到知识 chunk，再把命中内容传给 LLM 生成客服回复；如果 LLM 调用失败，会降级到规则模板，保证系统可用性。
+```
+
+## 15. session memory 多轮上下文补全是什么
+
+多轮上下文补全不是让大模型自己猜，而是后端明确保存上一轮的关键参数。
+
+```text
+用户：查订单 A101
+Agent：查询订单，并把 order_no=A101 写入 session memory
+用户：那物流呢
+Agent：发现用户没有提供物流号，于是从 session memory 取出 A101
+Agent：调用 query_logistics_by_order(order_no="A101")
+Agent：查到 L101 后回复物流状态
+```
+
+在这个项目里，`session_messages` 表保存 Agent 内部状态，`recent_context` 用来记录最近订单号和物流号。
+
+为什么这一步重要：真实客服对话里，用户不会每句话都重复完整编号。多轮上下文补全可以让 Agent 更像一个连续对话系统，而不是每轮都从零开始。
+
+面试时可以这样说：
+
+```text
+我实现了基于 session memory 的多轮上下文补全能力：Agent 会把最近查询到的订单号和物流号保存到会话记忆里，当用户下一轮省略参数时，后端会自动补全参数并调用对应工具。
+```

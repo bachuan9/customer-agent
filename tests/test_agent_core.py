@@ -62,6 +62,26 @@ def test_policy_question_is_detected_as_knowledge_search():
     assert detect_intent("会员积分规则") == "search_knowledge"
 
 
+def test_follow_up_logistics_uses_recent_order_context():
+    user_id = "pytest-follow-up-logistics"
+
+    first = run_agent_with_steps(ChatRequest(user_id=user_id, message="查订单 A101", role="agent"))
+    second = run_agent_with_steps(ChatRequest(user_id=user_id, message="那物流呢", role="agent"))
+
+    assert "订单 A101" in first["reply"]
+    assert "物流 L101" in second["reply"]
+
+
+def test_follow_up_order_uses_recent_logistics_context():
+    user_id = "pytest-follow-up-order"
+
+    first = run_agent_with_steps(ChatRequest(user_id=user_id, message="查物流 L101", role="agent"))
+    second = run_agent_with_steps(ChatRequest(user_id=user_id, message="那订单呢", role="agent"))
+
+    assert "L101" in first["reply"]
+    assert "订单 A101" in second["reply"]
+
+
 def test_rbac_manager_can_update_order_but_agent_cannot():
     assert can_role_execute_tool("manager", "update_order") is True
     assert can_role_execute_tool("agent", "update_order") is False
@@ -206,6 +226,69 @@ def test_policy_question_uses_rag_after_llm_tool_selection_fails(monkeypatch):
     assert result["trace"]["rag"]["found"] is True
     assert "docs/knowledge/shipping-policy.md" in result["trace"]["rag"]["sources"]
     assert "\u6211\u53ea\u80fd\u67e5\u8be2\u8ba2\u5355\u6216\u7269\u6d41" not in result["reply"]
+
+
+def test_policy_question_uses_rag_llm_reply_after_llm_tool_selection_fails(monkeypatch):
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    def fake_tool_selection(message):
+        raise LLMAgentError("LLM did not return a tool call")
+
+    def fake_rag_llm_reply(message, knowledge_result):
+        assert message == "\u7269\u6d41\u8d85\u65f6\u653f\u7b56"
+        assert knowledge_result["found"] is True
+        assert "docs/knowledge/shipping-policy.md" in knowledge_result["sources"]
+        return "\u8fd9\u662f RAG \u547d\u4e2d\u540e LLM \u751f\u6210\u7684\u5ba2\u670d\u56de\u590d\u3002"
+
+    monkeypatch.setattr("app.services.agent.run_llm_tool_selection", fake_tool_selection)
+    monkeypatch.setattr("app.services.agent.generate_rag_llm_reply", fake_rag_llm_reply)
+
+    try:
+        result = run_agent_with_steps(
+            ChatRequest(
+                user_id="pytest-policy-rag-llm-reply",
+                message="\u7269\u6d41\u8d85\u65f6\u653f\u7b56",
+                role="agent",
+            )
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert result["reply"] == "\u8fd9\u662f RAG \u547d\u4e2d\u540e LLM \u751f\u6210\u7684\u5ba2\u670d\u56de\u590d\u3002"
+    assert result["trace"]["llm_reply_generated"] is True
+    assert result["trace"]["reply_source"] == "rag_llm_reply"
+    assert result["trace"]["rag"]["found"] is True
+    assert "\u56de\u590d\u6765\u6e90\uff1aRAG \u547d\u4e2d\u540e\u7531 LLM \u751f\u6210" in result["steps"]
+
+
+def test_policy_question_falls_back_to_rag_template_when_rag_llm_reply_fails(monkeypatch):
+    original_llm_enabled = settings.llm_enabled
+    settings.llm_enabled = True
+
+    def fake_tool_selection(message):
+        raise LLMAgentError("LLM did not return a tool call")
+
+    def fake_rag_llm_reply(message, knowledge_result):
+        raise LLMReplyError("mock rag reply failed")
+
+    monkeypatch.setattr("app.services.agent.run_llm_tool_selection", fake_tool_selection)
+    monkeypatch.setattr("app.services.agent.generate_rag_llm_reply", fake_rag_llm_reply)
+
+    try:
+        result = run_agent_with_steps(
+            ChatRequest(
+                user_id="pytest-policy-rag-llm-fallback",
+                message="\u7269\u6d41\u8d85\u65f6\u653f\u7b56",
+                role="agent",
+            )
+        )
+    finally:
+        settings.llm_enabled = original_llm_enabled
+
+    assert result["trace"]["reply_source"] == "rule_template"
+    assert result["trace"]["llm_fallback_error"] == "mock rag reply failed"
+    assert "docs/knowledge/shipping-policy.md" in result["reply"]
 
 
 def test_run_agent_with_steps_traces_confirmation_requirement(monkeypatch):
