@@ -107,3 +107,4 @@ class LangChainAgentRequest(BaseModel):
 
 class LangGraphAgentRequest(BaseModel):
     question: str
+    user_id: str = "anonymous"

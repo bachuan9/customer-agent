@@ -433,6 +433,222 @@ button:disabled {
   overflow: hidden;
 }
 
+.langgraph-card {
+  border: 1px solid rgba(240, 180, 41, 0.28);
+  border-radius: calc(var(--radius) + 2px);
+  background:
+    radial-gradient(circle at top right, rgba(240, 180, 41, 0.18), transparent 32%),
+    linear-gradient(180deg, #fffdf6, #ffffff);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.langgraph-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.langgraph-question-field {
+  margin-bottom: 0;
+}
+
+.langgraph-question-field textarea {
+  width: 100%;
+  border: 1px solid rgba(19, 32, 51, 0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+}
+
+.langgraph-question-field textarea:focus {
+  outline: none;
+  border-color: rgba(240, 180, 41, 0.65);
+  box-shadow: 0 0 0 4px rgba(240, 180, 41, 0.12);
+}
+
+.langgraph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+#langGraphRunBtn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), #ffd45d);
+  color: #271a00;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.langgraph-result {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 20px;
+}
+
+.langgraph-result-card {
+  display: grid;
+  gap: 12px;
+}
+
+.langgraph-flow {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(240, 180, 41, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(240, 180, 41, 0.16), transparent 34%),
+    linear-gradient(180deg, #fffaf0, #ffffff);
+}
+
+.langgraph-flow-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.langgraph-flow-header strong {
+  display: block;
+  color: var(--navy);
+}
+
+.langgraph-flow-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.langgraph-flow-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.langgraph-flow-badges span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(19, 32, 51, 0.07);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.langgraph-flow-badges .risk-high {
+  background: rgba(180, 35, 24, 0.1);
+  color: #b42318;
+}
+
+.langgraph-flow-badges .risk-normal {
+  background: rgba(25, 164, 106, 0.1);
+  color: var(--success);
+}
+
+.langgraph-flow-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.langgraph-flow-node {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-width: 128px;
+  padding: 12px 12px 12px 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 18px rgba(14, 27, 45, 0.05);
+}
+
+.langgraph-flow-index {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), #ffd45d);
+  color: #271a00;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.langgraph-flow-node strong {
+  color: var(--navy);
+  font-size: 13px;
+}
+
+.langgraph-flow-node small {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.langgraph-reply {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  background: #ffffff;
+}
+
+.langgraph-reply strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--navy);
+}
+
+.langgraph-reply p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.langgraph-json {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  background: #f8fafc;
+}
+
+.langgraph-json summary {
+  cursor: pointer;
+  color: var(--navy);
+  font-weight: 800;
+}
+
+.langgraph-json pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #101828;
+  color: #e6edf7;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .chat-header,
 .section-header {
   display: flex;
@@ -1175,6 +1391,30 @@ tbody tr:nth-child(even) td {
 
   .knowledge-filters {
     grid-template-columns: 1fr;
+  }
+
+  .langgraph-form {
+    grid-template-columns: 1fr;
+  }
+
+  .langgraph-actions {
+    justify-content: stretch;
+  }
+
+  .langgraph-actions button {
+    flex: 1 1 140px;
+  }
+
+  .langgraph-flow-header {
+    flex-direction: column;
+  }
+
+  .langgraph-flow-badges {
+    justify-content: flex-start;
+  }
+
+  .langgraph-flow-node {
+    flex: 1 1 160px;
   }
 
   .filter-actions {

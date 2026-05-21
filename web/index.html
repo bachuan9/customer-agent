@@ -220,6 +220,38 @@
             </footer>
           </section>
 
+          <section class="langgraph-card">
+            <header class="section-header">
+              <div>
+                <span class="eyebrow">LangGraph Lab</span>
+                <h2>LangGraph 多工具 Agent 实验区</h2>
+                <p>直接测试订单工具、物流工具、RAG 工具和高风险确认闭环。</p>
+              </div>
+              <div class="header-badge">
+                <span class="status-dot"></span>
+                多工具工作流
+              </div>
+            </header>
+
+            <form id="langGraphForm" class="langgraph-form">
+              <label class="field langgraph-question-field">
+                <span>测试问题</span>
+                <textarea id="langGraphQuestion" rows="3" placeholder="例如：我的订单 A101 48小时了，怎么还没发货"></textarea>
+              </label>
+              <div class="langgraph-actions">
+                <button id="langGraphRunBtn" type="submit">运行 LangGraph</button>
+                <button class="ghost" type="button" data-langgraph-question="我的订单 A101 48小时了，怎么还没发货">订单超时</button>
+                <button class="ghost" type="button" data-langgraph-question="我的物流 L101 48小时了，怎么还没更新">物流超时</button>
+                <button class="ghost" type="button" data-langgraph-question="退款多久到账">RAG政策</button>
+                <button class="ghost muted" type="button" data-langgraph-question="确认创建投诉">确认创建投诉</button>
+              </div>
+            </form>
+
+            <div id="langGraphResult" class="langgraph-result">
+              <p class="empty-state">还没有运行结果。建议先点“订单超时”或“物流超时”，再点“确认创建投诉”。</p>
+            </div>
+          </section>
+
           <section class="knowledge-card">
             <header class="section-header">
               <div>
@@ -302,6 +334,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=20260520-agent-evaluation-v1"></script>
+    <script src="./app.js?v=20260521-langgraph-flow-v1"></script>
   </body>
 </html>

@@ -644,7 +644,7 @@ def langchain_agent(req: LangChainAgentRequest) -> dict:
 
 @router.post("/langgraph/agent")
 def langgraph_agent(req: LangGraphAgentRequest) -> dict:
-    return run_langgraph_agent(req.question)
+    return run_langgraph_agent(req.question, user_id=req.user_id)
 
 
 @router.post("/knowledge/rebuild-index")

@@ -1164,3 +1164,237 @@ select_tool -> call_tool 或 no_tool_reply
 ```text
 我用 LangGraph 将 Agent 流程拆成 select_tool、call_tool、no_tool_reply 等节点，并通过条件边根据 tool_selected 决定下一步走向。State 在节点之间传递 question、selection、reply、trace 和 tool_result，使 Agent 工作流从普通函数调用升级成可分支、可观测的图结构。
 ```
+
+## 18. LangGraph 风险评估节点
+
+这一步在 LangGraph Agent 中新增了一个业务节点：
+
+```text
+assess_risk
+```
+
+它用于判断用户问题是否属于高风险场景。
+
+### 18.1 新流程
+
+```text
+START
+-> select_tool
+-> call_tool
+-> assess_risk
+-> END
+```
+
+如果没有选中工具：
+
+```text
+START
+-> select_tool
+-> no_tool_reply
+-> END
+```
+
+### 18.2 assess_risk_node 做什么
+
+`assess_risk_node` 会读取 State 里的用户问题：
+
+```text
+state["question"]
+```
+
+然后调用：
+
+```text
+assess_risk_level(question)
+```
+
+如果问题里包含这些关键词：
+
+```text
+48 小时
+超时
+投诉
+破损
+赔付
+升级
+```
+
+就标记为：
+
+```text
+risk_level = high
+```
+
+否则标记为：
+
+```text
+risk_level = normal
+```
+
+### 18.3 trace 怎么看
+
+高风险问题：
+
+```json
+{
+  "nodes": ["select_tool", "call_tool", "assess_risk"],
+  "risk_level": "high"
+}
+```
+
+普通问题：
+
+```json
+{
+  "nodes": ["select_tool", "call_tool", "assess_risk"],
+  "risk_level": "normal"
+}
+```
+
+没有工具的问题：
+
+```json
+{
+  "nodes": ["select_tool", "no_tool_reply"],
+  "risk_level": "normal"
+}
+```
+
+### 18.4 为什么这个节点适合放在 LangGraph
+
+风险评估是一个独立业务步骤。
+
+如果用普通函数写，它可能藏在某个 if/else 里，不容易看出流程。
+
+用 LangGraph 后，它变成了清晰的节点：
+
+```text
+call_tool -> assess_risk -> END
+```
+
+以后可以继续扩展：
+
+```text
+assess_risk
+-> high -> confirm_complaint
+-> normal -> END
+```
+
+这就是图结构的价值：后续加分支和节点会更自然。
+
+### 18.5 面试时可以怎么说
+
+```text
+我在 LangGraph Agent 中新增了风险评估节点 assess_risk，将工具调用后的业务判断从普通 if/else 拆成独立节点。该节点根据问题中的超时、投诉、破损、赔付等关键词标记 risk_level，并写入 trace，后续可以基于 risk_level 增加人工确认、自动建投诉或升级处理分支。
+```
+
+## 19. LangGraph 高风险确认节点
+
+这一步在 `assess_risk` 后面新增了一个确认节点：
+
+```text
+confirm_complaint
+```
+
+它用于高风险问题的投诉/升级确认。
+
+### 19.1 新流程
+
+高风险问题：
+
+```text
+START
+-> select_tool
+-> call_tool
+-> assess_risk
+-> confirm_complaint
+-> END
+```
+
+普通问题：
+
+```text
+START
+-> select_tool
+-> call_tool
+-> assess_risk
+-> END
+```
+
+没有工具的问题：
+
+```text
+START
+-> select_tool
+-> no_tool_reply
+-> END
+```
+
+### 19.2 route_after_assess_risk 做什么
+
+`route_after_assess_risk` 会读取：
+
+```text
+state["trace"]["risk_level"]
+```
+
+如果是：
+
+```text
+high
+```
+
+就进入：
+
+```text
+confirm_complaint
+```
+
+否则直接结束。
+
+### 19.3 confirm_complaint_node 做什么
+
+当前这个节点先不真正创建投诉。
+
+它只做三件事：
+
+```text
+给回复追加确认提示
+在 trace 里写入 requires_confirmation = true
+在 trace 里写入 confirmation_action = create_complaint
+```
+
+这样前端或后续流程就知道：
+
+```text
+这次不是普通回复，而是等待用户确认是否创建投诉
+```
+
+### 19.4 trace 怎么看
+
+```json
+{
+  "nodes": ["select_tool", "call_tool", "assess_risk", "confirm_complaint"],
+  "risk_level": "high",
+  "requires_confirmation": true,
+  "confirmation_action": "create_complaint"
+}
+```
+
+### 19.5 为什么先不直接创建投诉
+
+因为创建投诉是写数据库的动作。
+
+真实客服系统里，高风险不应该直接自动建单，而是先让用户确认：
+
+```text
+是否继续创建投诉？
+```
+
+这一步先实现确认提示，下一步再接多轮确认和真正创建投诉。
+
+### 19.6 面试时可以怎么说
+
+```text
+我在 LangGraph Agent 中加入了高风险确认节点。风险评估节点识别到 high 风险后，会通过条件边进入 confirm_complaint 节点，该节点不会立即写数据库，而是生成确认提示并在 trace 中标记 requires_confirmation 和 confirmation_action，为后续人工确认或自动建单流程打基础。
+```

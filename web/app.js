@@ -52,6 +52,10 @@ const ragEvalBtn = document.getElementById("ragEvalBtn");
 const agentEvalBtn = document.getElementById("agentEvalBtn");
 const ragDebugResult = document.getElementById("ragDebugResult");
 const ragDebugExamples = document.getElementById("ragDebugExamples");
+const langGraphForm = document.getElementById("langGraphForm");
+const langGraphQuestionInput = document.getElementById("langGraphQuestion");
+const langGraphRunBtn = document.getElementById("langGraphRunBtn");
+const langGraphResult = document.getElementById("langGraphResult");
 const chips = document.querySelectorAll(".chip");
 
 const API_BASE = "";
@@ -373,6 +377,167 @@ function renderAgentTrace(trace = {}) {
 function setBubbleReplyWithSteps(bubble, reply, steps = [], trace = {}) {
   const safeReply = escapeHtml(reply || "（无回复）");
   setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`);
+}
+
+function renderLangGraphTrace(trace = {}) {
+  const rows = [
+    ["节点流程", trace.nodes?.join(" -> ") || "无"],
+    ["选择工具", trace.tool_selected || "无"],
+    ["工具参数", trace.tool_arguments ? JSON.stringify(trace.tool_arguments) : "无"],
+    ["工具是否调用", trace.tool_used ? "是" : "否"],
+    ["工具结果命中", trace.tool_result_found ? "是" : "否"],
+    ["知识库命中", trace.knowledge_found ? "是" : "否"],
+    ["是否建议投诉", trace.suggest_complaint ? "是" : "否"],
+    ["风险等级", trace.risk_level || "无"],
+    ["是否需要确认", trace.requires_confirmation ? "是" : "否"],
+    ["确认动作", trace.confirmation_action || "无"],
+    ["已确认动作", trace.confirmed_action || "无"],
+    ["投诉编号", trace.complaint_id || "无"],
+    ["LLM是否参与", trace.llm_used ? "是" : "否"],
+    ["降级原因", trace.fallback_reason || trace.tool_selection_fallback_reason || "无"],
+  ];
+
+  return `
+    <div class="agent-steps agent-trace langgraph-trace">
+      <strong>LangGraph Trace</strong>
+      <ol>
+        ${rows
+          .map(([label, value]) => `<li><span>${escapeHtml(label)}</span>${escapeHtml(String(value))}</li>`)
+          .join("")}
+      </ol>
+    </div>
+  `;
+}
+
+function getLangGraphNodeLabel(nodeName) {
+  const labels = {
+    check_pending_confirmation: "检查待确认",
+    select_tool: "选择工具",
+    call_tool: "调用工具",
+    assess_risk: "风险判断",
+    confirm_complaint: "等待确认",
+    create_complaint: "创建投诉",
+    no_tool_reply: "无工具兜底",
+  };
+  return labels[nodeName] || nodeName;
+}
+
+function getLangGraphToolLabel(toolName) {
+  const labels = {
+    handle_order_issue: "订单组合工具",
+    handle_logistics_issue: "物流组合工具",
+    search_knowledge: "RAG知识库工具",
+  };
+  return labels[toolName] || toolName || "未选择工具";
+}
+
+function renderLangGraphFlow(trace = {}) {
+  const nodes = trace.nodes || [];
+  if (!nodes.length) {
+    return "";
+  }
+
+  const nodeItems = nodes
+    .map(
+      (nodeName, index) => `
+        <li class="langgraph-flow-node">
+          <span class="langgraph-flow-index">${index + 1}</span>
+          <strong>${escapeHtml(getLangGraphNodeLabel(nodeName))}</strong>
+          <small>${escapeHtml(nodeName)}</small>
+        </li>
+      `
+    )
+    .join("");
+
+  const riskClass = trace.risk_level === "high" ? "high" : "normal";
+  const confirmText = trace.requires_confirmation
+    ? "等待用户确认"
+    : trace.confirmed_action
+      ? "已执行确认动作"
+      : "无需确认";
+
+  return `
+    <div class="langgraph-flow">
+      <div class="langgraph-flow-header">
+        <div>
+          <strong>节点执行流水线</strong>
+          <p>从左到右就是这次 LangGraph 真正走过的流程。</p>
+        </div>
+        <div class="langgraph-flow-badges">
+          <span>${escapeHtml(getLangGraphToolLabel(trace.tool_selected))}</span>
+          <span class="risk-${riskClass}">风险：${escapeHtml(trace.risk_level || "无")}</span>
+          <span>${escapeHtml(confirmText)}</span>
+        </div>
+      </div>
+      <ol class="langgraph-flow-list">${nodeItems}</ol>
+    </div>
+  `;
+}
+
+function renderLangGraphToolResult(toolResult) {
+  if (!toolResult) {
+    return "";
+  }
+
+  return `
+    <details class="langgraph-json" open>
+      <summary>工具结构化结果</summary>
+      <pre>${escapeHtml(JSON.stringify(toolResult, null, 2))}</pre>
+    </details>
+  `;
+}
+
+function renderLangGraphResult(data) {
+  return `
+    <div class="langgraph-result-card">
+      <div class="langgraph-reply">
+        <strong>Agent 回复</strong>
+        <p>${escapeHtml(data.reply || "（无回复）")}</p>
+      </div>
+      ${renderLangGraphFlow(data.trace || {})}
+      ${renderLangGraphTrace(data.trace || {})}
+      ${renderLangGraphToolResult(data.tool_result)}
+      ${data.created_complaint ? renderLangGraphToolResult({ created_complaint: data.created_complaint }) : ""}
+    </div>
+  `;
+}
+
+function setLangGraphRunning(isRunning) {
+  if (!langGraphRunBtn) return;
+  langGraphRunBtn.disabled = isRunning;
+  langGraphRunBtn.textContent = isRunning ? "运行中..." : "运行 LangGraph";
+}
+
+async function runLangGraphAgent(question) {
+  const trimmedQuestion = question.trim();
+  if (!trimmedQuestion) return;
+
+  const userId = userIdInput.value.trim() || "user1";
+  setLangGraphRunning(true);
+  langGraphResult.innerHTML = '<p class="empty-state">LangGraph 正在运行，请稍等...</p>';
+
+  try {
+    const res = await fetch(`${API_BASE}/langgraph/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: trimmedQuestion,
+        user_id: userId,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    langGraphResult.innerHTML = renderLangGraphResult(data);
+    await loadComplaintStats();
+  } catch (err) {
+    langGraphResult.innerHTML = '<p class="empty-state">LangGraph 请求失败，请确认后端服务正在运行。</p>';
+  } finally {
+    setLangGraphRunning(false);
+  }
 }
 
 function renderChatHistory(messages = []) {
@@ -1825,6 +1990,21 @@ chatForm.addEventListener("submit", (event) => {
   if (!message) return;
   messageInput.value = "";
   sendMessage(message);
+});
+
+if (langGraphForm) {
+  langGraphForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    runLangGraphAgent(langGraphQuestionInput.value);
+  });
+}
+
+document.querySelectorAll("[data-langgraph-question]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const question = button.dataset.langgraphQuestion || "";
+    langGraphQuestionInput.value = question;
+    runLangGraphAgent(question);
+  });
 });
 
 messageInput.addEventListener("keydown", (event) => {
