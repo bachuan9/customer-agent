@@ -743,3 +743,49 @@ _get_relevant_documents 里复用 search_knowledge；
 knowledge_match_to_document 把普通字典转成 LangChain Document；
 最终返回 List[Document]。
 ```
+
+## 13. 项目代码阅读顺序约定
+
+为了便于新手理解，后续新增代码尽量按照“真实执行流程”排列。
+
+推荐顺序：
+
+```text
+入口函数
+-> 流程编排函数
+-> 分支处理函数
+-> 外部调用函数
+-> fallback / 格式化函数
+-> 底层转换函数
+```
+
+例如 `langchain_rag_agent.py` 当前顺序是：
+
+```text
+run_langchain_rag_agent(question)
+-> build_langchain_input(question, knowledge_result)
+-> build_langchain_rag_chain()
+-> build_customer_reply(chain_input)
+-> build_langchain_llm_messages(prompt_text)
+-> build_template_reply(chain_input)
+-> build_knowledge_text(matches)
+-> prompt_value_to_text(prompt_value)
+```
+
+为什么不是所有函数都能严格入口在最上面？
+
+因为 Python 有些对象在创建时需要依赖前面已经定义好的类或函数。
+
+例如 `langchain_tools.py` 里的 `search_knowledge_tool = StructuredTool.from_function(...)` 创建时，需要先定义：
+
+```text
+SearchKnowledgeInput
+run_search_knowledge_tool
+```
+
+所以代码顺序要同时满足两个原则：
+
+```text
+第一：尽量符合真实调用流程，方便阅读
+第二：必须符合 Python 运行规则，保证导入时不报错
+```

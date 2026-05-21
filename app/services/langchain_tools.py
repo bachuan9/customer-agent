@@ -25,9 +25,9 @@ search_knowledge_tool = StructuredTool.from_function(
 )
 
 
-def list_langchain_tools() -> List[StructuredTool]:
-    return [search_knowledge_tool]
-
-
 def call_langchain_search_knowledge(query: str) -> Dict[str, Any]:
     return search_knowledge_tool.invoke({"query": query})
+
+
+def list_langchain_tools() -> List[StructuredTool]:
+    return [search_knowledge_tool]

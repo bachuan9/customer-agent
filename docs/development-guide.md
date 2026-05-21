@@ -808,3 +808,38 @@ git add . 容易把个人学习文档、临时文件一起加进去。
 ```text
 先让功能可用，再让权限可控，最后让系统可测试、可观察、可维护。
 ```
+
+## Agent 主流程阅读地图
+
+`app/services/agent.py` 文件比较大，阅读时建议不要从第一行一路读到底，而是按真实请求流程看：
+
+```text
+/chat 接口
+-> run_agent_with_steps(req)
+-> run_agent_trace(req)
+-> detect_intent(message)
+-> handle_intent(...)
+-> call_tool(...) / search_knowledge(...) / create_complaint(...)
+-> format_xxx_reply(...)
+-> build_agent_steps(...)
+-> 返回 reply + steps + trace
+```
+
+对应职责：
+
+```text
+run_agent_with_steps(req): Agent 对外入口，返回回复、步骤、trace
+run_agent_trace(req): Agent 主流程，负责读取请求、判断是否走 LLM、组织 trace
+detect_intent(message): 识别用户意图
+handle_intent(...): 根据意图进入具体业务分支
+call_tool(...): 通过工具注册表调用 tools.py 里的具体工具
+format_xxx_reply(...): 把工具结果整理成用户能看懂的客服回复
+build_agent_steps(...): 生成前端步骤面板
+```
+
+阅读建议：
+
+```text
+先看入口，再看分发，再看具体工具，最后看格式化回复。
+不要一开始就陷入每个辅助函数的细节。
+```

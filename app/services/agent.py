@@ -9,6 +9,19 @@ from app.services.llm_reply import LLMReplyError, generate_llm_reply, generate_r
 from app.services.tool_registry import call_tool, format_tool_error
 
 
+# Agent 主流程阅读地图：
+# 1. /chat 接口调用 run_agent_with_steps(req)，这是带步骤面板的入口。
+# 2. run_agent_with_steps(req) 调用 run_agent_trace(req)，拿到回复和 trace。
+# 3. run_agent_trace(req) 先读取 message、user_id、role 和会话记忆。
+# 4. detect_intent(message) 判断用户想查订单、查物流、创建投诉，还是确认操作。
+# 5. handle_intent(...) 进入规则 Agent 分支，执行查询、更新、投诉等业务逻辑。
+# 6. 如果开启 LLM，run_llm_tool_selection(message) 会尝试让大模型选择工具。
+# 7. call_tool(...) 通过 tool_registry 调用 tools.py 里的具体工具函数。
+# 8. format_xxx_reply(...) 把工具或数据库结果整理成用户能看懂的客服回复。
+# 9. build_agent_steps(...) 把执行过程整理成前端步骤面板。
+# 10. 最终返回 reply + steps + trace 给 routes.py，再返回给 web/app.js。
+
+
 
 # 简单的会话记忆（按 user_id 保存上下文，基于 SQLite 持久化）
 MEMORY = DatabaseSessionStore()
