@@ -789,3 +789,378 @@ run_search_knowledge_tool
 第一：尽量符合真实调用流程，方便阅读
 第二：必须符合 Python 运行规则，保证导入时不报错
 ```
+
+## 14. LangChain Agent 实验入口
+
+这一步新增了一个独立的 LangChain Agent 实验入口：
+
+```text
+POST /langchain/agent
+```
+
+它不替换原来的 `/chat` 主流程，只用于学习和展示 Agent 如何选择工具。
+
+### 14.1 当前链路
+
+```text
+POST /langchain/agent
+-> langchain_agent(req)
+-> run_langchain_agent(question)
+-> select_langchain_tool(question)
+-> 如果选择 search_knowledge
+-> run_langchain_rag_agent(question)
+-> search_knowledge_tool
+-> RAG + LLM / fallback
+-> 返回 reply + trace + tool_result
+```
+
+### 14.2 Agent 和 Chain 的区别
+
+Chain 更像固定流水线：
+
+```text
+先检索
+-> 再组 prompt
+-> 再调用 LLM
+-> 再输出
+```
+
+Agent 多了一步“选择”：
+
+```text
+用户问题来了
+-> 先判断要不要用工具
+-> 决定用哪个工具
+-> 再执行工具
+-> 再组织回复
+```
+
+所以 Agent 的关键不是“调用函数”，而是“根据问题选择动作”。
+
+### 14.3 当前为什么是 deterministic_tool_selection
+
+当前版本先用确定性规则选择工具：
+
+```text
+如果问题里包含退款、退货、物流、48 小时、会员、生鲜等关键词
+-> 选择 search_knowledge
+否则
+-> 不选择工具
+```
+
+这样做是为了先把 Agent 结构讲清楚，避免一开始就被真实 LLM 的不稳定输出干扰。
+
+后续可以升级成：
+
+```text
+LLM 根据工具描述自动选择工具
+```
+
+### 14.4 trace 怎么看
+
+命中工具时：
+
+```json
+{
+  "framework": "langchain",
+  "agent_mode": "deterministic_tool_selection",
+  "tool_selected": "search_knowledge",
+  "tool_used": true,
+  "tool_result_found": true
+}
+```
+
+没有匹配工具时：
+
+```json
+{
+  "framework": "langchain",
+  "agent_mode": "deterministic_tool_selection",
+  "tool_selected": null,
+  "tool_used": false,
+  "reason": "no_matching_policy_keyword"
+}
+```
+
+### 14.5 面试时可以怎么说
+
+```text
+我新增了一个独立的 LangChain Agent 实验入口，用确定性工具选择策略模拟 Agent 决策过程。Agent 会根据用户问题判断是否调用 search_knowledge Tool，命中后复用 LangChain RAG 链路生成回复，并在 trace 中记录 tool_selected、tool_used、tool_result_found、llm_used 和 fallback_reason，为后续升级到 LLM 自动工具选择打基础。
+```
+
+## 15. LangChain Agent：LLM 自动选择工具
+
+这一步把 LangChain Agent 从规则选工具升级成了“LLM 优先选工具，失败后回退规则”。
+
+### 15.1 升级后的流程
+
+```text
+POST /langchain/agent
+-> run_langchain_agent(question)
+-> select_tool_with_llm_fallback(question)
+-> 优先 select_langchain_tool_with_llm(question)
+-> LLM 返回 JSON：tool_name + arguments
+-> parse_tool_selection_response(...)
+-> 如果选择 search_knowledge
+-> run_langchain_rag_agent(question)
+-> 返回 reply + trace + tool_result
+```
+
+如果 LLM 选择工具失败：
+
+```text
+LLM 不可用 / 返回不是 JSON / 选择了未知工具
+-> 捕获错误
+-> select_langchain_tool(question)
+-> 回退到关键词规则选择
+```
+
+### 15.2 为什么 LLM 只负责选工具，不直接回答
+
+当前 Agent 阶段把 LLM 分成两个职责：
+
+```text
+第一个 LLM：工具选择器，只判断该用哪个工具
+第二个 LLM：客服回复生成器，根据 RAG 结果生成自然回复
+```
+
+这样职责更清楚，也更容易调试。
+
+### 15.3 LLM 工具选择返回格式
+
+我们要求 LLM 只返回 JSON：
+
+```json
+{"tool_name":"search_knowledge","arguments":{"query":"用户问题"}}
+```
+
+如果不需要工具，返回：
+
+```json
+{"tool_name":null,"arguments":{}}
+```
+
+后端会解析这个 JSON，再决定是否调用工具。
+
+### 15.4 trace 怎么看
+
+LLM 选工具成功：
+
+```json
+{
+  "agent_mode": "llm_tool_selection",
+  "tool_selected": "search_knowledge",
+  "tool_used": true,
+  "tool_selection_fallback_reason": null
+}
+```
+
+LLM 选工具失败，回退规则：
+
+```json
+{
+  "agent_mode": "deterministic_tool_selection",
+  "tool_selected": "search_knowledge",
+  "tool_used": true,
+  "tool_selection_fallback_reason": "LLM is disabled"
+}
+```
+
+### 15.5 面试时可以怎么说
+
+```text
+我将 LangChain Agent 从规则式工具选择升级为 LLM 优先的工具选择。系统会先把用户问题和可用工具描述交给 LLM，要求模型返回结构化 JSON，包括 tool_name 和 arguments；后端解析并校验工具名，如果有效就调用对应工具。如果 LLM 不可用、返回格式错误或选择未知工具，会自动 fallback 到确定性关键词规则，保证 Agent 稳定可用。
+```
+
+## 16. Tool Calling 闭环：真正使用工具参数
+
+这一步修正了一个关键细节：Agent 不仅要使用 LLM 返回的工具名，也要使用 LLM 返回的工具参数。
+
+### 16.1 修改前
+
+```text
+LLM 返回：
+{"tool_name":"search_knowledge","arguments":{"query":"48 物流"}}
+
+后端实际执行：
+run_langchain_rag_agent(question)
+```
+
+也就是说，虽然 LLM 给了 `arguments.query`，但后端仍然使用用户原始问题 `question`。
+
+### 16.2 修改后
+
+```text
+LLM 返回：
+{"tool_name":"search_knowledge","arguments":{"query":"48 物流"}}
+
+后端实际执行：
+tool_query = selection["arguments"]["query"]
+run_langchain_rag_agent(tool_query)
+```
+
+现在工具调用真正使用了模型给出的参数。
+
+### 16.3 为什么这很重要
+
+Function Calling / Tool Calling 的完整思想是：
+
+```text
+LLM 决定调用哪个工具
+LLM 给出工具参数
+后端校验工具名和参数
+后端按参数执行工具
+后端把工具结果返回给用户或继续交给 LLM
+```
+
+如果只用工具名，不用工具参数，闭环是不完整的。
+
+### 16.4 当前链路
+
+```text
+run_langchain_agent(question)
+-> select_tool_with_llm_fallback(question)
+-> selection["tool_name"]
+-> selection["arguments"]["query"]
+-> run_langchain_rag_agent(tool_query)
+-> search_knowledge_tool.invoke({"query": tool_query})
+-> search_knowledge(tool_query)
+```
+
+### 16.5 trace 怎么看
+
+```json
+{
+  "tool_selected": "search_knowledge",
+  "tool_arguments": {"query": "48 物流"},
+  "tool_used": true
+}
+```
+
+这里的 `tool_arguments` 就是 LLM 或 fallback 规则最终给工具使用的参数。
+
+### 16.6 面试时可以怎么说
+
+```text
+我实现了完整的 Tool Calling 执行闭环：LLM 不只返回工具名，还返回结构化 arguments；后端会解析、校验并使用 arguments.query 调用 LangChain RAG 工具链，同时在 trace 中记录 tool_arguments，便于观测模型决策和实际工具调用是否一致。
+```
+
+## 17. LangGraph Agent 小闭环
+
+这一步新增了独立接口：
+
+```text
+POST /langgraph/agent
+```
+
+它不替换原来的 `/chat`，用于学习如何把 Agent 流程写成图。
+
+### 17.1 当前 LangGraph 流程
+
+```text
+START
+-> select_tool
+-> 根据 tool_selected 条件分支
+   -> call_tool
+   -> END
+   -> no_tool_reply
+   -> END
+```
+
+对应项目链路：
+
+```text
+run_langgraph_agent(question)
+-> build_langgraph_workflow()
+-> select_tool_node(state)
+-> route_after_select_tool(state)
+-> call_tool_node(state) 或 no_tool_reply_node(state)
+-> 返回 reply + trace + tool_result
+```
+
+### 17.2 State 是什么
+
+State 是图里每个节点共享的数据。
+
+当前 State 包含：
+
+```text
+question: 用户问题
+selection: 工具选择结果
+reply: 最终回复
+trace: 执行轨迹
+tool_result: 工具执行结果
+```
+
+每个节点会读取 State，也会往 State 里写入新字段。
+
+### 17.3 Node 是什么
+
+Node 是图里的处理步骤。
+
+当前有三个节点：
+
+```text
+select_tool: 选择工具
+call_tool: 调用工具
+no_tool_reply: 没有工具时生成安全回复
+```
+
+每个节点本质上都是一个 Python 函数：
+
+```text
+输入 state
+输出要更新到 state 的字段
+```
+
+### 17.4 Edge 是什么
+
+Edge 是节点之间的连接线。
+
+普通边：
+
+```text
+START -> select_tool
+call_tool -> END
+no_tool_reply -> END
+```
+
+条件边：
+
+```text
+select_tool -> call_tool 或 no_tool_reply
+```
+
+条件由 `route_after_select_tool(state)` 决定。
+
+### 17.5 trace 怎么看
+
+工具命中：
+
+```json
+{
+  "framework": "langgraph",
+  "nodes": ["select_tool", "call_tool"],
+  "tool_selected": "search_knowledge",
+  "tool_used": true
+}
+```
+
+没有工具：
+
+```json
+{
+  "framework": "langgraph",
+  "nodes": ["select_tool", "no_tool_reply"],
+  "tool_selected": null,
+  "tool_used": false
+}
+```
+
+`nodes` 字段就是这次图实际走过的节点。
+
+### 17.6 面试时可以怎么说
+
+```text
+我用 LangGraph 将 Agent 流程拆成 select_tool、call_tool、no_tool_reply 等节点，并通过条件边根据 tool_selected 决定下一步走向。State 在节点之间传递 question、selection、reply、trace 和 tool_result，使 Agent 工作流从普通函数调用升级成可分支、可观测的图结构。
+```

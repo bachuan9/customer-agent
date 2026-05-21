@@ -99,3 +99,11 @@ class KnowledgeArticleUpdateRequest(BaseModel):
 
 class LangChainRagRequest(BaseModel):
     question: str
+
+
+class LangChainAgentRequest(BaseModel):
+    question: str
+
+
+class LangGraphAgentRequest(BaseModel):
+    question: str
