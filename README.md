@@ -275,3 +275,5 @@ node --check web\app.js
 ```
 
 更多启动、测试和排错步骤见 [运行与测试手册](docs/运行与测试手册.md) 和 [开发手册](docs/development-guide.md)。
+
+Docker 部署和容器启动步骤见 [部署手册](docs/部署手册.md)。

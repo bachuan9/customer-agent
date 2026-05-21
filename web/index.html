@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Commerce Service Console</title>
+    <title>智能客服工作台</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,14 +18,15 @@
         <div class="brand">
           <div class="brand-mark">CS</div>
           <div>
-            <h1>Commerce Service Console</h1>
-            <p>订单、物流、投诉一体化客服工作台</p>
+            <h1>智能客服工作台</h1>
+            <p>电商售后 · 订单物流 · 投诉工单</p>
           </div>
         </div>
 
-        <div class="top-search" aria-label="工作台搜索框">
-          <span>Search</span>
-          <input type="text" value="订单 / 物流 / 投诉" readonly />
+        <div class="top-guide" aria-label="使用流程">
+          <span>1 接待客户</span>
+          <span>2 查询订单/物流</span>
+          <span>3 处理投诉工单</span>
         </div>
 
         <div class="top-status">
@@ -39,14 +40,14 @@
           <section class="panel agent-card">
             <div class="agent-avatar">客</div>
             <div>
-              <h2>客服坐席</h2>
-              <p>练习多轮对话、查单、查物流和投诉处理</p>
+              <h2>今日工作台</h2>
+              <p>先处理客户对话，需要时再展开管理和实验功能。</p>
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel compact-panel">
             <div class="panel-title">
-              <span>会话信息</span>
+              <span>当前会话</span>
               <small>Session</small>
             </div>
             <form id="loginForm" class="login-form">
@@ -68,17 +69,19 @@
               <span>用户 ID</span>
               <input id="userId" type="text" placeholder="例如：user1" value="user1" />
             </label>
-            <label class="field">
-              <span>客服名</span>
-              <input id="agentName" type="text" placeholder="例如：Alice" value="Alice" />
-            </label>
-            <label class="field">
-              <span>角色</span>
-              <select id="role">
-                <option value="agent" selected>普通客服</option>
-                <option value="manager">主管</option>
-              </select>
-            </label>
+            <div class="session-mini-grid">
+              <label class="field">
+                <span>客服名</span>
+                <input id="agentName" type="text" placeholder="例如：Alice" value="Alice" />
+              </label>
+              <label class="field">
+                <span>角色</span>
+                <select id="role">
+                  <option value="agent" selected>普通客服</option>
+                  <option value="manager">主管</option>
+                </select>
+              </label>
+            </div>
             <label class="field">
               <span>当前状态</span>
               <input id="status" type="text" readonly value="在线" />
@@ -87,81 +90,74 @@
 
           <section class="panel">
             <div class="panel-title">
-              <span>业务查询</span>
-              <small>Operations</small>
+              <span>常用入口</span>
+              <small>Daily</small>
             </div>
             <div class="action-grid">
               <button id="ordersBtn" class="ghost">订单列表</button>
               <button id="logisticsBtn" class="ghost">物流列表</button>
               <button id="complaintsBtn" class="ghost">投诉记录</button>
-              <button id="managerQueueBtn" class="ghost">主管待处理</button>
               <button id="followUpQueueBtn" class="ghost">需要跟进</button>
               <button id="chatSessionsBtn" class="ghost">会话列表</button>
-              <button id="knowledgeBtn" class="ghost">知识库</button>
-              <button id="toolLogsBtn" class="ghost">工具日志</button>
-              <button id="usersBtn" class="ghost">用户管理</button>
-              <button id="auditLogsBtn" class="ghost">审计日志</button>
               <button id="clearBtn" class="ghost muted">清空聊天</button>
             </div>
+
+            <details class="sidebar-details">
+              <summary>管理工具</summary>
+              <div class="action-grid">
+                <button id="managerQueueBtn" class="ghost">主管待处理</button>
+                <button id="knowledgeBtn" class="ghost">知识库</button>
+                <button id="toolLogsBtn" class="ghost">工具日志</button>
+                <button id="usersBtn" class="ghost">用户管理</button>
+                <button id="auditLogsBtn" class="ghost">审计日志</button>
+              </div>
+            </details>
           </section>
 
           <section class="panel">
             <div class="panel-title">
-              <span>快捷话术</span>
-              <small>Quick Reply</small>
+              <span>快捷操作</span>
+              <small>Quick</small>
             </div>
             <div class="chips">
               <div class="chip-group">
-                <div class="chip-group-title">查询</div>
+                <div class="chip-group-title">最常用</div>
                 <button class="chip" data-message="查订单 A101">查订单 A101</button>
                 <button class="chip" data-message="查物流 L101">查物流 L101</button>
-              </div>
-
-              <div class="chip-group">
-                <div class="chip-group-title">知识库 / RAG</div>
                 <button class="chip" data-message="退款多久到账">退款多久到账</button>
-                <button class="chip" data-message="质量问题退货运费谁承担">质量问题退货运费</button>
-                <button class="chip" data-message="会员积分退款后会扣回吗">会员积分退款</button>
-              </div>
-
-              <div class="chip-group">
-                <div class="chip-group-title">组合场景</div>
                 <button class="chip" data-message="我的订单 A101 48小时了，怎么还没发货">订单48小时未发货</button>
-                <button class="chip" data-message="我的物流 L101 48小时了，怎么还没发货">物流48小时未发货</button>
               </div>
 
-              <div class="chip-group">
-                <div class="chip-group-title">订单操作</div>
-                <button class="chip" data-message="更新订单 A101 shipped">更新订单为已发货</button>
-                <button class="chip" data-message="确认更新订单 A101 shipped">确认更新订单</button>
-                <button class="chip" data-message="确认执行">确认执行 LLM 建议</button>
-              </div>
+              <details class="sidebar-details">
+                <summary>更多话术</summary>
+                <div class="chip-group">
+                  <div class="chip-group-title">知识库 / RAG</div>
+                  <button class="chip" data-message="质量问题退货运费谁承担">质量问题退货运费</button>
+                  <button class="chip" data-message="会员积分退款后会扣回吗">会员积分退款</button>
+                  <button class="chip" data-message="我的物流 L101 48小时了，怎么还没发货">物流48小时未发货</button>
+                </div>
 
-              <div class="chip-group">
-                <div class="chip-group-title">物流操作</div>
-                <button class="chip" data-message="更新物流 L101 delivered">更新物流为已送达</button>
-                <button class="chip" data-message="确认更新物流 L101 delivered">确认更新物流</button>
-              </div>
+                <div class="chip-group">
+                  <div class="chip-group-title">订单 / 物流操作</div>
+                  <button class="chip" data-message="更新订单 A101 shipped">更新订单为已发货</button>
+                  <button class="chip" data-message="确认更新订单 A101 shipped">确认更新订单</button>
+                  <button class="chip" data-message="确认执行">确认执行 LLM 建议</button>
+                  <button class="chip" data-message="更新物流 L101 delivered">更新物流为已送达</button>
+                  <button class="chip" data-message="确认更新物流 L101 delivered">确认更新物流</button>
+                </div>
 
-              <div class="chip-group">
-                <div class="chip-group-title">投诉</div>
-                <button class="chip" data-message="我要投诉">我要投诉</button>
-              </div>
-
-              <div class="chip-group">
-                <div class="chip-group-title">投诉工单操作</div>
-                <button class="chip" data-message="分配投诉 C-0021 Alice">分配投诉给 Alice</button>
-                <button class="chip" data-message="更新投诉 C-0021 processing">投诉改为处理中</button>
-                <button class="chip" data-message="解决投诉 C-0021">解决投诉</button>
-              </div>
-
-              <div class="chip-group">
-                <div class="chip-group-title">投诉筛选</div>
-                <button class="chip" data-message="查看高优先级投诉">高优先级投诉</button>
-                <button class="chip" data-message="查看处理中投诉">处理中投诉</button>
-                <button class="chip" data-message="查看待处理投诉">待处理投诉</button>
-                <button class="chip" data-message="查看已解决投诉">已解决投诉</button>
-              </div>
+                <div class="chip-group">
+                  <div class="chip-group-title">投诉</div>
+                  <button class="chip" data-message="我要投诉">我要投诉</button>
+                  <button class="chip" data-message="分配投诉 C-0021 Alice">分配投诉给 Alice</button>
+                  <button class="chip" data-message="更新投诉 C-0021 processing">投诉改为处理中</button>
+                  <button class="chip" data-message="解决投诉 C-0021">解决投诉</button>
+                  <button class="chip" data-message="查看高优先级投诉">高优先级投诉</button>
+                  <button class="chip" data-message="查看处理中投诉">处理中投诉</button>
+                  <button class="chip" data-message="查看待处理投诉">待处理投诉</button>
+                  <button class="chip" data-message="查看已解决投诉">已解决投诉</button>
+                </div>
+              </details>
             </div>
           </section>
         </aside>
@@ -221,19 +217,29 @@
           </section>
 
           <section class="langgraph-card">
-            <header class="section-header">
-              <div>
-                <span class="eyebrow">LangGraph Lab</span>
-                <h2>LangGraph 多工具 Agent 实验区</h2>
-                <p>直接测试订单工具、物流工具、RAG 工具和高风险确认闭环。</p>
-              </div>
-              <div class="header-badge">
-                <span class="status-dot"></span>
-                多工具工作流
-              </div>
-            </header>
+            <details class="langgraph-drawer">
+              <summary>
+                <div>
+                  <span class="eyebrow">Agent Lab</span>
+                  <h2>LangGraph 多工具 Agent 实验区</h2>
+                  <p>学习和调试用，默认收起；需要看工具链路时再展开。</p>
+                </div>
+                <span class="drawer-hint">展开实验区</span>
+              </summary>
 
-            <form id="langGraphForm" class="langgraph-form">
+              <header class="section-header langgraph-inner-header">
+                <div>
+                  <span class="eyebrow">LangGraph Lab</span>
+                  <h2>多工具调用链路</h2>
+                  <p>直接测试订单工具、物流工具、RAG 工具和高风险确认闭环。</p>
+                </div>
+                <div class="header-badge">
+                  <span class="status-dot"></span>
+                  多工具工作流
+                </div>
+              </header>
+
+              <form id="langGraphForm" class="langgraph-form">
               <label class="field langgraph-question-field">
                 <span>测试问题</span>
                 <textarea id="langGraphQuestion" rows="3" placeholder="例如：我的订单 A101 48小时了，怎么还没发货"></textarea>
@@ -245,15 +251,26 @@
                 <button class="ghost" type="button" data-langgraph-question="退款多久到账">RAG政策</button>
                 <button class="ghost muted" type="button" data-langgraph-question="确认创建投诉">确认创建投诉</button>
               </div>
-            </form>
+              </form>
 
-            <div id="langGraphResult" class="langgraph-result">
-              <p class="empty-state">还没有运行结果。建议先点“订单超时”或“物流超时”，再点“确认创建投诉”。</p>
-            </div>
+              <div id="langGraphResult" class="langgraph-result">
+                <p class="empty-state">还没有运行结果。建议先点“订单超时”或“物流超时”，再点“确认创建投诉”。</p>
+              </div>
+            </details>
           </section>
 
           <section class="knowledge-card">
-            <header class="section-header">
+            <details class="knowledge-drawer">
+              <summary>
+                <div>
+                  <span class="eyebrow">Knowledge Base</span>
+                  <h2>知识库与 RAG 调试</h2>
+                  <p>高级功能默认收起，需要维护知识库或调试检索时再展开。</p>
+                </div>
+                <span class="drawer-hint">展开</span>
+              </summary>
+
+            <header class="section-header knowledge-inner-header">
               <div>
                 <span class="eyebrow">Knowledge Base</span>
                 <h2>知识库管理</h2>
@@ -329,11 +346,12 @@
             <div id="knowledgeList" class="knowledge-list">
               <p class="empty-state">知识库加载中...</p>
             </div>
+            </details>
           </section>
         </main>
       </div>
     </div>
 
-    <script src="./app.js?v=20260521-langgraph-flow-v1"></script>
+    <script src="./app.js?v=20260522-service-ui-v2"></script>
   </body>
 </html>
