@@ -4,18 +4,18 @@
 
 ## 1. 环境准备
 
-推荐使用 Python 3.8+。
+推荐使用 Python 3.11。
 
 创建虚拟环境：
 
 ```powershell
-python -m venv .venv
+py -3.11 -m venv .venv311
 ```
 
 激活虚拟环境：
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+.\.venv311\Scripts\Activate.ps1
 ```
 
 安装依赖：
@@ -27,7 +27,7 @@ pip install -r requirements.txt
 如果不想激活虚拟环境，也可以直接使用：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## 2. 配置 .env
@@ -70,7 +70,7 @@ APP_DB_PATH 用来指定 SQLite 数据库文件位置。
 开发启动命令：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
 `--reload` 的作用：
@@ -82,7 +82,7 @@ APP_DB_PATH 用来指定 SQLite 数据库文件位置。
 演示或稳定运行时，可以不加 `--reload`：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir .
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --app-dir .
 ```
 
 访问地址：
@@ -345,7 +345,49 @@ POST   /chat/history/{user_id}/reply
 DELETE /chat/history/{user_id}
 ```
 
-### 5.6 用户管理
+### 5.6 LangGraph 多工具 Agent 实验区
+
+页面位置：
+
+```text
+http://127.0.0.1:8001/web
+-> LangGraph 多工具 Agent 实验区
+```
+
+它调用的接口：
+
+```text
+POST /langgraph/agent
+```
+
+请求体示例：
+
+```json
+{
+  "user_id": "user1",
+  "question": "我的订单 A101 48小时了，怎么还没发货"
+}
+```
+
+推荐测试：
+
+```text
+1. 点击“订单超时”。
+2. 确认节点流水线包含：检查待确认、选择工具、调用工具、风险判断、等待确认。
+3. 确认工具为 handle_order_issue。
+4. 点击“确认创建投诉”。
+5. 确认节点流水线变成：检查待确认、创建投诉。
+6. 确认返回投诉编号。
+```
+
+这个实验区的意义：
+
+```text
+它展示的是 LangGraph 状态机工作流，不是普通 /chat 聊天流程。
+适合演示工具选择、工具调用、风险判断、human-in-the-loop 和 trace 可观测性。
+```
+
+### 5.7 用户管理
 
 使用主管账号登录：
 
@@ -385,7 +427,7 @@ agent1 / agent123
 主管可以完成用户管理三类动作：角色调整、启用禁用、重置密码。
 ```
 
-### 5.6 LLM 写操作确认
+### 5.8 LLM 写操作确认
 
 如果 `.env` 中 `LLM_ENABLED=true`，可以测试：
 
@@ -414,7 +456,7 @@ agent1 / agent123
 -> 记录工具日志
 ```
 
-### 5.7 工具日志
+### 5.9 工具日志
 
 点击：
 
@@ -445,7 +487,7 @@ rbac_denied：权限拒绝
 unknown：旧日志或未知来源
 ```
 
-### 5.8 审计日志
+### 5.10 审计日志
 
 使用主管账号登录：
 
@@ -492,13 +534,13 @@ manager1 / manager123
 运行全部测试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv311\Scripts\python.exe -m pytest -q
 ```
 
 当前完整测试应看到：
 
 ```text
-95 passed
+全部测试通过
 ```
 
 检查前端 JavaScript：
@@ -510,15 +552,21 @@ node --check web\app.js
 检查 Python 编译：
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app
 ```
 
 推荐提交前完整检查：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app
+```
+
+如果 `.env` 开启了真实 LLM，全量 pytest 可能因为网络请求变慢。可以先跑主线核心测试：
+
+```powershell
+.\.venv311\Scripts\python.exe -m pytest tests\test_langgraph_agent.py tests\test_langchain_agent.py tests\test_langchain_rag_agent.py tests\test_langchain_tools.py tests\test_langchain_retriever.py tests\test_api_routes.py -q
 ```
 
 ## 7. 常用接口
@@ -633,7 +681,7 @@ Copy-Item data\complaints.backup.db data\complaints.db -Force
 推荐命令：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
 然后访问：
@@ -764,9 +812,9 @@ practice/
 提交前建议运行：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app
 ```
 
 如果要提交代码但不提交学习文档：
