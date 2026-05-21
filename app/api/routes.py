@@ -12,6 +12,7 @@ from app.models.schemas import (
     ComplaintUpdateRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleUpdateRequest,
+    LangChainRagRequest,
     LoginRequest,
     LogisticsCreateRequest,
     LogisticsUpdateRequest,
@@ -25,6 +26,7 @@ from app.models.schemas import (
 )
 from app.services.agent import list_complaints, run_agent_with_steps
 from app.services.agent_evaluation import run_agent_evaluation
+from app.services.langchain_rag_agent import run_langchain_rag_agent
 from app.services.tool_registry import list_function_calling_tools
 from app.storage.db import (
     ALLOWED_LOGISTICS_STATUSES,
@@ -624,6 +626,11 @@ def evaluate_rag() -> dict:
 @router.get("/agent/evaluate")
 def evaluate_agent() -> dict:
     return run_agent_evaluation()
+
+
+@router.post("/langchain/rag")
+def langchain_rag(req: LangChainRagRequest) -> dict:
+    return run_langchain_rag_agent(req.question)
 
 
 @router.post("/knowledge/rebuild-index")

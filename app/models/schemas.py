@@ -95,3 +95,7 @@ class KnowledgeArticleUpdateRequest(BaseModel):
     content: str = None
     tags: str = None
     enabled: bool = None
+
+
+class LangChainRagRequest(BaseModel):
+    question: str
