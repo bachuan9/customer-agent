@@ -1066,6 +1066,72 @@ def build_agent_steps(
     return steps
 
 
+def add_decision_step(path, title, detail, status="done"):
+    path.append({"title": title, "detail": detail, "status": status})
+
+
+def build_agent_decision_path(trace, steps):
+    path = []
+    intent = trace.get("intent", "unknown")
+    execution_mode = trace.get("execution_mode", "rule_agent")
+    reply_source = trace.get("reply_source", "rule_template")
+    selection = trace.get("selection") or {}
+    rag = trace.get("rag") or {}
+    langgraph_trace = trace.get("langgraph") or {}
+    decision_summary = trace.get("decision_summary") or {}
+
+    mode_labels = {
+        "rule_agent": "规则 Agent",
+        "llm_agent": "LLM Agent",
+        "langgraph_agent": "LangGraph Agent",
+    }
+    reply_source_labels = {
+        "rule_template": "规则模板",
+        "llm_reply": "LLM 生成回复",
+        "rag_llm_reply": "RAG 命中后 LLM 生成回复",
+        "llm_template_fallback": "工具结果模板",
+        "langgraph_workflow": "LangGraph 工作流",
+    }
+
+    add_decision_step(path, "接收用户输入", f"识别到用户意图：{intent}")
+    add_decision_step(path, "选择执行模式", f"本次使用：{mode_labels.get(execution_mode, execution_mode)}")
+
+    if trace.get("llm_fallback_error"):
+        add_decision_step(path, "LLM 降级", f"降级原因：{trace['llm_fallback_error']}", "fallback")
+
+    if selection:
+        tool_name = selection.get("tool_name", "unknown")
+        add_decision_step(path, "LLM 选择工具", f"选择工具：{tool_name}")
+        if selection.get("requires_confirmation"):
+            add_decision_step(path, "等待人工确认", "该工具会修改数据，已保存为 pending_llm_action", "waiting")
+
+    if langgraph_trace:
+        nodes = " -> ".join(langgraph_trace.get("nodes", [])) or "无"
+        add_decision_step(path, "进入 LangGraph 状态机", f"节点流程：{nodes}")
+        if langgraph_trace.get("tool_selected"):
+            add_decision_step(path, "LangGraph 选择工具", f"选择工具：{langgraph_trace['tool_selected']}")
+        if decision_summary.get("why_this_tool"):
+            add_decision_step(path, "生成决策解释", decision_summary["why_this_tool"])
+        if langgraph_trace.get("requires_confirmation"):
+            add_decision_step(path, "等待用户确认", "高风险场景先保存待确认动作，不直接创建投诉", "waiting")
+        if langgraph_trace.get("complaint_id"):
+            add_decision_step(path, "写入投诉工单", f"已创建投诉：{langgraph_trace['complaint_id']}")
+
+    if rag:
+        if rag.get("found"):
+            source = "，".join(rag.get("sources", [])) or "无来源"
+            score = rag.get("top_score", "无")
+            add_decision_step(path, "检索知识库 RAG", f"命中来源：{source}；最高分：{score}")
+        else:
+            add_decision_step(path, "检索知识库 RAG", "未命中可用知识", "missed")
+
+    if steps:
+        add_decision_step(path, "整理执行步骤", f"共生成 {len(steps)} 条步骤，供前端展示")
+
+    add_decision_step(path, "生成最终回复", f"回复来源：{reply_source_labels.get(reply_source, reply_source)}")
+    return path
+
+
 # 9. 规则 Agent 主分发：根据识别出的 intent 进入对应处理分支。
 def handle_intent(message, user_id, intent, pending_existing):
     if intent == "confirm_llm_action":
@@ -1549,4 +1615,5 @@ def run_agent_with_steps(req):
         langgraph_trace=trace.get("langgraph"),
         langgraph_decision_summary=trace.get("decision_summary"),
     )
+    trace["decision_path"] = build_agent_decision_path(trace, steps)
     return {"reply": reply, "steps": steps, "trace": trace}

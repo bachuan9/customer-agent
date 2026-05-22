@@ -940,6 +940,82 @@ button:disabled {
   font-weight: 700;
 }
 
+.agent-decision-path {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fffdf7, #f8fbff);
+  border: 1px solid rgba(240, 180, 41, 0.28);
+  color: var(--navy);
+  font-size: 13px;
+  white-space: normal;
+}
+
+.agent-decision-path > strong {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.agent-decision-path ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.decision-path-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.decision-path-index {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--navy);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.decision-path-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.decision-path-title em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(19, 32, 51, 0.08);
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.decision-path-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.decision-path-waiting .decision-path-title em {
+  background: rgba(240, 180, 41, 0.18);
+  color: #8a5a00;
+}
+
+.decision-path-fallback .decision-path-title em,
+.decision-path-missed .decision-path-title em {
+  background: rgba(210, 79, 63, 0.12);
+  color: #9b2d1f;
+}
+
 .agent-trace li {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);

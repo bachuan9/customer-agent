@@ -70,6 +70,8 @@ def test_follow_up_logistics_uses_recent_order_context():
 
     assert "A101" in first["reply"]
     assert "物流 L101" in second["reply"]
+    assert first["trace"]["decision_path"][0]["title"] == "接收用户输入"
+    assert any(item["title"] == "生成最终回复" for item in first["trace"]["decision_path"])
 
 
 def test_follow_up_order_uses_recent_logistics_context():
@@ -334,6 +336,7 @@ def test_run_agent_with_steps_shows_llm_fallback_reason(monkeypatch):
     assert "执行模式：规则 Agent（LLM 调用失败后自动降级）" in result["steps"]
     assert "LLM 降级原因：mock llm unavailable" in result["steps"]
     assert "调用工具：query_order" in result["steps"]
+    assert any(item["title"] == "LLM 降级" for item in result["trace"]["decision_path"])
 
 
 def test_agent_role_denied_confirmation_is_logged():
@@ -405,11 +408,14 @@ def test_chat_agent_uses_langgraph_for_issue_confirmation_flow():
         "confirm_complaint",
     ]
     assert first["trace"]["decision_summary"]["selected_tool"] == "handle_order_issue"
+    assert any(item["title"] == "进入 LangGraph 状态机" for item in first["trace"]["decision_path"])
+    assert any(item["title"] == "等待用户确认" for item in first["trace"]["decision_path"])
     assert "接入 LangGraph 工作流" in first["steps"]
     assert "LangGraph 决策工具：handle_order_issue" in first["steps"]
 
     assert second["trace"]["execution_mode"] == "langgraph_agent"
     assert second["trace"]["reply_source"] == "langgraph_workflow"
     assert second["trace"]["langgraph"]["nodes"] == ["check_pending_confirmation", "create_complaint"]
+    assert any(item["title"] == "写入投诉工单" for item in second["trace"]["decision_path"])
     assert "投诉编号" in second["reply"]
     assert "接入 LangGraph 工作流" in second["steps"]

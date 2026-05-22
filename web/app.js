@@ -327,6 +327,42 @@ function renderAgentSteps(steps = []) {
   `;
 }
 
+function renderAgentDecisionPath(trace = {}) {
+  const path = trace.decision_path || [];
+  if (!path.length) return "";
+
+  const statusLabels = {
+    done: "完成",
+    waiting: "待确认",
+    fallback: "降级",
+    missed: "未命中",
+  };
+  const items = path
+    .map((item, index) => {
+      const status = item.status || "done";
+      return `
+        <li class="decision-path-item decision-path-${escapeHtml(status)}">
+          <span class="decision-path-index">${index + 1}</span>
+          <div>
+            <div class="decision-path-title">
+              <strong>${escapeHtml(item.title || "未命名步骤")}</strong>
+              <em>${escapeHtml(statusLabels[status] || status)}</em>
+            </div>
+            <p>${escapeHtml(item.detail || "暂无说明")}</p>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="agent-decision-path">
+      <strong>Agent 决策链路</strong>
+      <ol>${items}</ol>
+    </div>
+  `;
+}
+
 function renderAgentTrace(trace = {}) {
   if (!trace || !Object.keys(trace).length) return "";
 
@@ -409,7 +445,7 @@ function setBubbleReplyWithSteps(bubble, reply, steps = [], trace = {}) {
   const safeReply = escapeHtml(reply || "（无回复）");
   setBubbleHtml(
     bubble,
-    `${safeReply}${renderChatLangGraphPanel(trace)}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`
+    `${safeReply}${renderChatLangGraphPanel(trace)}${renderAgentDecisionPath(trace)}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`
   );
 }
 
