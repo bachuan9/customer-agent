@@ -386,9 +386,31 @@ function renderAgentTrace(trace = {}) {
   `;
 }
 
+function renderChatLangGraphPanel(trace = {}) {
+  const langgraphTrace = trace.langgraph || {};
+  if (!langgraphTrace.nodes?.length) {
+    return "";
+  }
+
+  const decisionSummary = trace.decision_summary || langgraphTrace.decision_summary || {};
+  return `
+    <div class="chat-langgraph-panel">
+      <div class="chat-langgraph-panel-title">
+        <span>LangGraph 主链路</span>
+        <strong>这次客服回复经过了状态机工作流</strong>
+      </div>
+      ${renderLangGraphFlow(langgraphTrace)}
+      ${renderLangGraphDecisionSummary(decisionSummary)}
+    </div>
+  `;
+}
+
 function setBubbleReplyWithSteps(bubble, reply, steps = [], trace = {}) {
   const safeReply = escapeHtml(reply || "（无回复）");
-  setBubbleHtml(bubble, `${safeReply}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`);
+  setBubbleHtml(
+    bubble,
+    `${safeReply}${renderChatLangGraphPanel(trace)}${renderAgentSteps(steps)}${renderAgentTrace(trace)}`
+  );
 }
 
 function renderLangGraphTrace(trace = {}) {

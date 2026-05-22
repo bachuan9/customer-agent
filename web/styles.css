@@ -562,6 +562,37 @@ button:disabled {
   gap: 12px;
 }
 
+.chat-langgraph-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(19, 32, 51, 0.08);
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.chat-langgraph-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chat-langgraph-panel-title span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(240, 180, 41, 0.18);
+  color: #7a4c00;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.chat-langgraph-panel-title strong {
+  color: var(--navy);
+  font-size: 13px;
+}
+
 .langgraph-flow {
   display: grid;
   gap: 12px;
