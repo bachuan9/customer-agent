@@ -29,8 +29,10 @@ AGENT_EVAL_CASES = [
         "name": "\u8ba2\u5355\u5f02\u5e38\u591a\u5de5\u5177\u5904\u7406",
         "messages": ["\u6211\u7684\u8ba2\u5355 A101 48\u5c0f\u65f6\u4e86\uff0c\u600e\u4e48\u8fd8\u6ca1\u53d1\u8d27"],
         "expected_intent": "order_issue",
+        "expected_execution_mode": "langgraph_agent",
+        "expected_langgraph_tool": "handle_order_issue",
         "expected_rag_found": True,
-        "expected_reply_keywords": ["\u8ba2\u5355 A101", "\u5ba2\u670d\u5904\u7406\u5efa\u8bae"],
+        "expected_reply_keywords": ["\u8ba2\u5355 A101", "\u5efa\u8bae"],
     },
 ]
 
@@ -44,6 +46,18 @@ def check_agent_eval_case(case: Dict[str, Any], result: Dict[str, Any]) -> Dict[
     expected_intent = case.get("expected_intent")
     if expected_intent and trace.get("intent") != expected_intent:
         failures.append(f"expected intent {expected_intent}, got {trace.get('intent')}")
+
+    expected_execution_mode = case.get("expected_execution_mode")
+    if expected_execution_mode and trace.get("execution_mode") != expected_execution_mode:
+        failures.append(f"expected execution mode {expected_execution_mode}, got {trace.get('execution_mode')}")
+
+    expected_langgraph_tool = case.get("expected_langgraph_tool")
+    if expected_langgraph_tool:
+        langgraph_trace = trace.get("langgraph") or {}
+        if langgraph_trace.get("tool_selected") != expected_langgraph_tool:
+            failures.append(
+                f"expected langgraph tool {expected_langgraph_tool}, got {langgraph_trace.get('tool_selected')}"
+            )
 
     for keyword in case.get("expected_reply_keywords", []):
         if keyword not in reply:
@@ -93,6 +107,8 @@ def run_deterministic_agent_evaluation() -> Dict[str, Any]:
             "actual_intent": trace.get("intent"),
             "reply": (final_result or {}).get("reply", ""),
             "reply_source": trace.get("reply_source"),
+            "execution_mode": trace.get("execution_mode"),
+            "langgraph_tool": (trace.get("langgraph") or {}).get("tool_selected"),
             "rag_found": (trace.get("rag") or {}).get("found"),
             "rag_sources": (trace.get("rag") or {}).get("sources", []),
             "passed": check["passed"],

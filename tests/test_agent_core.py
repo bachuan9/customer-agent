@@ -374,3 +374,42 @@ def test_manager_confirmation_executes_pending_action():
     assert get_order_status("A101") == "shipped"
     assert latest_log["source"] == "llm_confirmed_action"
     assert latest_log["success"] is True
+
+
+def test_chat_agent_uses_langgraph_for_issue_confirmation_flow():
+    user_id = "pytest-chat-langgraph-flow"
+
+    first = run_agent_with_steps(
+        ChatRequest(
+            user_id=user_id,
+            message="我的订单 A101 48小时了，怎么还没发货",
+            role="agent",
+        )
+    )
+    second = run_agent_with_steps(
+        ChatRequest(
+            user_id=user_id,
+            message="确认创建投诉",
+            role="agent",
+        )
+    )
+
+    assert first["trace"]["execution_mode"] == "langgraph_agent"
+    assert first["trace"]["reply_source"] == "langgraph_workflow"
+    assert first["trace"]["langgraph"]["nodes"] == [
+        "check_pending_confirmation",
+        "select_tool",
+        "call_tool",
+        "summarize_decision",
+        "assess_risk",
+        "confirm_complaint",
+    ]
+    assert first["trace"]["decision_summary"]["selected_tool"] == "handle_order_issue"
+    assert "接入 LangGraph 工作流" in first["steps"]
+    assert "LangGraph 决策工具：handle_order_issue" in first["steps"]
+
+    assert second["trace"]["execution_mode"] == "langgraph_agent"
+    assert second["trace"]["reply_source"] == "langgraph_workflow"
+    assert second["trace"]["langgraph"]["nodes"] == ["check_pending_confirmation", "create_complaint"]
+    assert "投诉编号" in second["reply"]
+    assert "接入 LangGraph 工作流" in second["steps"]

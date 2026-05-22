@@ -332,11 +332,14 @@ function renderAgentTrace(trace = {}) {
 
   const selection = trace.selection || {};
   const rag = trace.rag || {};
+  const langgraphTrace = trace.langgraph || {};
+  const decisionSummary = trace.decision_summary || langgraphTrace.decision_summary || {};
   const replySourceLabels = {
     rule_template: "规则模板回复",
     llm_reply: "LLM 基于工具结果生成",
     rag_llm_reply: "RAG 命中后由 LLM 生成",
     llm_template_fallback: "LLM 失败后使用工具模板",
+    langgraph_workflow: "LangGraph 工作流",
   };
   const toolName = selection.tool_name || "无";
   const fallback = trace.llm_fallback_error || "无";
@@ -366,6 +369,9 @@ function renderAgentTrace(trace = {}) {
     ["命中标题", rag.top_title || "无"],
     ["来源类型", rag.top_source_type || "无"],
     ["RAG命中原因", rag.match_reason || "无"],
+    ["LangGraph节点", langgraphTrace.nodes?.length ? langgraphTrace.nodes.join(" -> ") : "无"],
+    ["LangGraph工具", langgraphTrace.tool_selected || "无"],
+    ["决策解释", decisionSummary.why_this_tool || "无"],
     ["LLM降级原因", fallback],
   ];
   const items = rows

@@ -7,6 +7,7 @@ from app.services.llm_agent import LLMAgentError, run_llm_tool_selection
 from app.services.llm_client import LLMClientError
 from app.services.llm_reply import LLMReplyError, generate_llm_reply, generate_rag_llm_reply
 from app.services.tool_registry import call_tool, format_tool_error
+from app.services.langgraph_agent import get_pending_confirmation, run_langgraph_agent, set_pending_confirmation
 
 
 # Agent 主流程阅读地图：
@@ -15,11 +16,12 @@ from app.services.tool_registry import call_tool, format_tool_error
 # 3. run_agent_trace(req) 读取 message、user_id、role，并用 detect_intent(message) 判断意图。
 # 4. 如果是确认类消息，优先处理 pending action，避免重复创建或误更新。
 # 5. 如果是订单/物流异常，优先调用组合工具 handle_order_issue / handle_logistics_issue。
-# 6. 如果开启 LLM，再尝试 run_llm_tool_selection(message)，失败时降级到规则 Agent。
-# 7. 规则 Agent 通过 handle_intent(...) 分发到查询、更新、投诉、备注等业务分支。
-# 8. call_tool(...) 通过 tool_registry 调用 tools.py 里的具体工具函数。
-# 9. format_xxx_reply(...) 和 build_agent_steps(...) 分别生成用户回复和前端步骤面板。
-# 10. 最终返回 reply + steps + trace 给 routes.py，再返回给 web/app.js。
+# 6. 对订单/物流高风险场景，主 Agent 会接入 LangGraph 工作流，获得节点流水线和决策解释。
+# 7. 如果开启 LLM，再尝试 run_llm_tool_selection(message)，失败时降级到规则 Agent。
+# 8. 规则 Agent 通过 handle_intent(...) 分发到查询、更新、投诉、备注等业务分支。
+# 9. call_tool(...) 通过 tool_registry 调用 tools.py 里的具体工具函数。
+# 10. format_xxx_reply(...) 和 build_agent_steps(...) 分别生成用户回复和前端步骤面板。
+# 11. 最终返回 reply + steps + trace 给 routes.py，再返回给 web/app.js。
 
 
 
@@ -945,6 +947,11 @@ def handle_confirm_create_complaint(user_id, pending_existing):
 
 
 def handle_cancel_create_complaint(user_id, pending_existing):
+    langgraph_pending = get_pending_confirmation(user_id)
+    if langgraph_pending:
+        set_pending_confirmation(user_id, None)
+        return "已取消创建投诉。"
+
     if not pending_existing or pending_existing.get("type") != "pending_complaint":
         return "当前没有待取消的投诉创建流程。"
 
@@ -961,11 +968,15 @@ def build_agent_steps(
     llm_reply_generated=False,
     llm_fallback_error=None,
     reply_source="rule_template",
+    langgraph_trace=None,
+    langgraph_decision_summary=None,
 ):
     steps = [f"识别意图：{intent}"]
 
     if execution_mode == "llm_agent":
         steps.append("执行模式：LLM Agent（本次调用了 LLM）")
+    elif execution_mode == "langgraph_agent":
+        steps.append("执行模式：LangGraph Agent（主客服窗口接入状态机工作流）")
     elif llm_fallback_error:
         steps.append("执行模式：规则 Agent（LLM 调用失败后自动降级）")
         steps.append(f"LLM 降级原因：{llm_fallback_error}")
@@ -976,12 +987,19 @@ def build_agent_steps(
         steps.append("回复来源：LLM 润色生成")
     elif reply_source == "rag_llm_reply":
         steps.append("回复来源：RAG 命中后由 LLM 生成")
+    elif reply_source == "langgraph_workflow":
+        steps.append("回复来源：LangGraph 工作流")
     elif reply_source == "llm_template_fallback":
         steps.append("回复来源：LLM 工具结果模板")
     else:
         steps.append("回复来源：规则模板")
 
     if intent == "confirm_create_complaint":
+        if langgraph_trace:
+            nodes = " -> ".join(langgraph_trace.get("nodes", []))
+            steps.append("接入 LangGraph 工作流")
+            if nodes:
+                steps.append(f"LangGraph 节点：{nodes}")
         if pending_existing:
             steps.append(f"读取会话记忆：{pending_existing.get('status', pending_existing.get('type'))}")
         else:
@@ -1030,6 +1048,18 @@ def build_agent_steps(
             steps.append("保存待确认动作：pending_llm_action")
 
     if intent in {"order_issue", "logistics_issue"}:
+        if langgraph_trace:
+            nodes = " -> ".join(langgraph_trace.get("nodes", []))
+            steps.append("接入 LangGraph 工作流")
+            if nodes:
+                steps.append(f"LangGraph 节点：{nodes}")
+        if langgraph_decision_summary:
+            selected_tool = langgraph_decision_summary.get("selected_tool")
+            reason = langgraph_decision_summary.get("why_this_tool")
+            if selected_tool:
+                steps.append(f"LangGraph 决策工具：{selected_tool}")
+            if reason:
+                steps.append(f"LangGraph 决策解释：{reason}")
         steps.append("判断是否需要建议创建投诉")
         if pending_after and pending_after.get("status") == "waiting_confirm":
             steps.append("保存待确认动作：waiting_confirm")
@@ -1388,6 +1418,14 @@ def run_agent_trace(req):
 
     if intent == "confirm_create_complaint":
         pending_existing = get_pending_complaint(user_id)
+        langgraph_result = run_langgraph_agent(message, user_id=user_id)
+        if langgraph_result.get("created_complaint"):
+            trace["execution_mode"] = "langgraph_agent"
+            trace["reply_source"] = "langgraph_workflow"
+            trace["langgraph"] = langgraph_result.get("trace")
+            trace["decision_summary"] = langgraph_result.get("decision_summary")
+            trace["reply"] = langgraph_result["reply"]
+            return trace
         trace["reply"] = handle_confirm_create_complaint(user_id, pending_existing)
         return trace
 
@@ -1397,61 +1435,29 @@ def run_agent_trace(req):
         return trace
 
     if intent == "order_issue":
-        pending_existing = get_pending_complaint(user_id)
         order_no = extract_id(message, "A")
-        result = call_tool("handle_order_issue", {"order_no": order_no, "query": message})
+        langgraph_result = run_langgraph_agent(message, user_id=user_id)
+        result = langgraph_result.get("tool_result") or {}
         set_recent_context(user_id, order_no=order_no, tracking_no=result.get("tracking_no"))
         trace["rag"] = build_rag_trace(result.get("knowledge_result"))
-        if result.get("suggest_complaint"):
-            set_pending_complaint(
-                user_id,
-                {
-                    "type": "pending_complaint",
-                    "status": "waiting_confirm",
-                    "issue_type": "订单异常",
-                    "order_id": order_no,
-                    "reason": message,
-                    "priority": "high",
-                    "handler": "客服主管",
-                },
-            )
-        trace["reply"] = format_order_issue_reply(
-            order_no,
-            result["order_result"],
-            result.get("logistics_result", {}),
-            result["knowledge_result"],
-            agent_suggestion=result.get("agent_suggestion"),
-            suggest_complaint=result.get("suggest_complaint", False),
-        )
+        trace["execution_mode"] = "langgraph_agent"
+        trace["reply_source"] = "langgraph_workflow"
+        trace["langgraph"] = langgraph_result.get("trace")
+        trace["decision_summary"] = langgraph_result.get("decision_summary")
+        trace["reply"] = langgraph_result["reply"]
         return trace
 
     if intent == "logistics_issue":
-        pending_existing = get_pending_complaint(user_id)
         tracking_no = extract_id(message, "L")
-        result = call_tool("handle_logistics_issue", {"tracking_no": tracking_no, "query": message})
+        langgraph_result = run_langgraph_agent(message, user_id=user_id)
+        result = langgraph_result.get("tool_result") or {}
         set_recent_context(user_id, tracking_no=tracking_no, order_no=result.get("order_no"))
         trace["rag"] = build_rag_trace(result.get("knowledge_result"))
-        if result.get("suggest_complaint"):
-            set_pending_complaint(
-                user_id,
-                {
-                    "type": "pending_complaint",
-                    "status": "waiting_confirm",
-                    "issue_type": "物流异常",
-                    "order_id": result.get("order_no"),
-                    "tracking_no": tracking_no,
-                    "reason": message,
-                    "priority": "high",
-                    "handler": "客服主管",
-                },
-            )
-        trace["reply"] = format_logistics_issue_reply(
-            tracking_no,
-            result["logistics_result"],
-            result["knowledge_result"],
-            agent_suggestion=result.get("agent_suggestion"),
-            suggest_complaint=result.get("suggest_complaint", False),
-        )
+        trace["execution_mode"] = "langgraph_agent"
+        trace["reply_source"] = "langgraph_workflow"
+        trace["langgraph"] = langgraph_result.get("trace")
+        trace["decision_summary"] = langgraph_result.get("decision_summary")
+        trace["reply"] = langgraph_result["reply"]
         return trace
 
     # 如果开启 LLM，就先让大模型选择工具；失败时退回下面的规则 Agent。
@@ -1553,5 +1559,7 @@ def run_agent_with_steps(req):
         llm_reply_generated=trace.get("llm_reply_generated", False),
         llm_fallback_error=trace.get("llm_fallback_error"),
         reply_source=trace.get("reply_source", "rule_template"),
+        langgraph_trace=trace.get("langgraph"),
+        langgraph_decision_summary=trace.get("decision_summary"),
     )
     return {"reply": reply, "steps": steps, "trace": trace}

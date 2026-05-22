@@ -789,3 +789,93 @@ check_pending_confirmation
 created_status:
 created
 ```
+
+## 10. 主客服窗口接入 LangGraph
+
+这一节把 LangGraph 从“实验区能力”推进到“主业务链路能力”。
+
+之前：
+
+```text
+主客服窗口：
+/chat -> agent.py -> 规则 Agent / LLM Agent
+
+LangGraph 实验区：
+/langgraph/agent -> langgraph_agent.py
+```
+
+现在：
+
+```text
+主客服窗口：
+/chat
+-> agent.py
+-> 如果是订单/物流高风险问题
+-> run_langgraph_agent(...)
+-> LangGraph 节点工作流
+-> 返回 reply + trace + decision_summary
+```
+
+### 10.1 为什么不是全部替换
+
+主客服窗口里有很多场景：
+
+```text
+普通问候
+普通订单查询
+普通物流查询
+知识库问答
+LLM 写操作确认
+投诉备注
+用户管理
+```
+
+如果一次性全部换成 LangGraph，风险很高。
+
+所以这里采用“小范围接入”：
+
+```text
+只把订单/物流高风险问题接入 LangGraph。
+```
+
+这样既能展示 LangGraph 的工程价值，又不会破坏已有功能。
+
+### 10.2 接入后的主流程
+
+订单异常：
+
+```text
+用户：我的订单 A101 48小时了，怎么还没发货
+-> /chat
+-> run_agent_trace(req)
+-> detect_intent(...) 得到 order_issue
+-> run_langgraph_agent(message, user_id)
+-> select_tool 选择 handle_order_issue
+-> call_tool 查询订单、物流、知识库
+-> summarize_decision 生成决策解释
+-> assess_risk 判断 high
+-> confirm_complaint 保存待确认动作
+-> 返回主客服窗口
+```
+
+用户确认：
+
+```text
+用户：确认创建投诉
+-> /chat
+-> run_agent_trace(req)
+-> detect_intent(...) 得到 confirm_create_complaint
+-> run_langgraph_agent(message, user_id)
+-> check_pending_confirmation 找到上一轮待确认动作
+-> create_complaint 创建投诉
+-> 返回投诉编号
+```
+
+### 10.3 面试说法
+
+```text
+我没有一开始就把主 Agent 全部改成 LangGraph，因为主窗口承载了很多稳定业务能力。
+我采用渐进式接入方式：先把订单/物流高风险场景接入 LangGraph。
+这些场景天然适合状态机，因为它们包含工具选择、工具调用、决策解释、风险判断、用户确认和数据库写入。
+这样项目既保留了原有稳定性，又能体现 LangGraph 在复杂 Agent 工作流里的价值。
+```

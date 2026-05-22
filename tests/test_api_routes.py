@@ -133,7 +133,8 @@ def test_delete_chat_history_endpoint_clears_pending_agent_memory():
         settings.llm_enabled = original_llm_enabled
 
     assert issue_response.status_code == 200
-    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert "接入 LangGraph 工作流" in issue_response.json()["steps"]
+    assert "LangGraph 决策工具：handle_logistics_issue" in issue_response.json()["steps"]
     assert delete_response.status_code == 200
     assert delete_response.json()["session_cleared"] is True
     assert confirm_response.status_code == 200
@@ -310,22 +311,30 @@ def test_chat_endpoint_handles_logistics_issue_with_policy_when_llm_disabled():
     reply = response.json()["reply"]
     steps = response.json()["steps"]
     assert response.status_code == 200
-    assert "已同时查询物流状态和平台政策" in reply
-    assert "物流 L101" in reply
-    assert "当前状态" in reply
-    assert "物流异常处理规则" in reply
-    assert "建议您" in reply
-    assert "客服处理建议" in reply
-    assert "参考来源" in reply
+    assert "已查询到物流单 L101" in reply
+    assert "当前物流状态" in reply
+    assert "建议" in reply
     assert "创建投诉" in reply
-    assert "客服主管" in reply
+    assert "升级处理" in reply
     assert "识别意图：logistics_issue" in steps
-    assert "执行模式：规则 Agent（本次未调用 LLM）" in steps
+    assert "执行模式：LangGraph Agent（主客服窗口接入状态机工作流）" in steps
+    assert "回复来源：LangGraph 工作流" in steps
+    assert "接入 LangGraph 工作流" in steps
+    assert "LangGraph 决策工具：handle_logistics_issue" in steps
     assert "调用组合工具：handle_logistics_issue" in steps
     assert "内部调用：query_logistics" in steps
     assert "内部调用：search_knowledge" in steps
     assert "生成客服处理建议" in steps
-    assert "保存待确认动作：waiting_confirm" in steps
+    assert "LangGraph 节点：check_pending_confirmation -> select_tool -> call_tool -> summarize_decision -> assess_risk -> confirm_complaint" in steps
+    assert response.json()["trace"]["langgraph"]["nodes"] == [
+        "check_pending_confirmation",
+        "select_tool",
+        "call_tool",
+        "summarize_decision",
+        "assess_risk",
+        "confirm_complaint",
+    ]
+    assert response.json()["trace"]["decision_summary"]["selected_tool"] == "handle_logistics_issue"
 
 
 def test_chat_endpoint_handles_order_issue_with_related_logistics_when_llm_disabled():
@@ -348,14 +357,27 @@ def test_chat_endpoint_handles_order_issue_with_related_logistics_when_llm_disab
     steps = response.json()["steps"]
     assert response.status_code == 200
     assert "订单 A101" in reply
-    assert "关联物流 L101" in reply
-    assert "客服处理建议" in reply
+    assert "关联物流单号：L101" in reply
+    assert "建议" in reply
     assert "识别意图：order_issue" in steps
+    assert "执行模式：LangGraph Agent（主客服窗口接入状态机工作流）" in steps
+    assert "回复来源：LangGraph 工作流" in steps
+    assert "接入 LangGraph 工作流" in steps
+    assert "LangGraph 决策工具：handle_order_issue" in steps
     assert "调用组合工具：handle_order_issue" in steps
     assert "内部调用：query_order" in steps
     assert "内部调用：query_logistics_by_order" in steps
     assert "内部调用：search_knowledge" in steps
     assert "生成客服处理建议" in steps
+    assert response.json()["trace"]["langgraph"]["nodes"] == [
+        "check_pending_confirmation",
+        "select_tool",
+        "call_tool",
+        "summarize_decision",
+        "assess_risk",
+        "confirm_complaint",
+    ]
+    assert response.json()["trace"]["decision_summary"]["selected_tool"] == "handle_order_issue"
 
 
 def test_chat_endpoint_logistics_issue_keeps_waiting_confirm_when_llm_enabled():
@@ -377,10 +399,11 @@ def test_chat_endpoint_logistics_issue_keeps_waiting_confirm_when_llm_enabled():
     steps = response.json()["steps"]
     assert response.status_code == 200
     assert "识别意图：logistics_issue" in steps
+    assert "执行模式：LangGraph Agent（主客服窗口接入状态机工作流）" in steps
     assert "调用组合工具：handle_logistics_issue" in steps
     assert "内部调用：query_logistics" in steps
     assert "内部调用：search_knowledge" in steps
-    assert "保存待确认动作：waiting_confirm" in steps
+    assert "LangGraph 节点：check_pending_confirmation -> select_tool -> call_tool -> summarize_decision -> assess_risk -> confirm_complaint" in steps
 
 
 def test_chat_endpoint_confirms_logistics_issue_complaint_when_llm_disabled():
@@ -411,19 +434,17 @@ def test_chat_endpoint_confirms_logistics_issue_complaint_when_llm_disabled():
     assert issue_response.status_code == 200
     assert "确认创建投诉" in issue_response.json()["reply"]
     assert confirm_response.status_code == 200
-    assert "已为用户创建投诉，编号 C-" in confirm_response.json()["reply"]
-    assert "优先级：high" in confirm_response.json()["reply"]
-    assert "处理人：客服主管" in confirm_response.json()["reply"]
+    assert "已为您创建投诉，投诉编号：C-" in confirm_response.json()["reply"]
+    assert "客服主管会继续跟进处理" in confirm_response.json()["reply"]
     assert "识别意图：confirm_create_complaint" in confirm_response.json()["steps"]
-    assert "读取会话记忆：waiting_confirm" in confirm_response.json()["steps"]
-    assert "整理投诉内容" in confirm_response.json()["steps"]
-    assert "调用工具：create_complaint" in confirm_response.json()["steps"]
-    assert "清空待确认动作" in confirm_response.json()["steps"]
+    assert "执行模式：LangGraph Agent（主客服窗口接入状态机工作流）" in confirm_response.json()["steps"]
+    assert "接入 LangGraph 工作流" in confirm_response.json()["steps"]
+    assert "LangGraph 节点：check_pending_confirmation -> create_complaint" in confirm_response.json()["steps"]
     complaints = list_response.json()
     assert any(
         item["user_id"] == "pytest-confirm-logistics-complaint"
-        and "物流号:L101" in item["content"]
-        and "订单号:A101" in item["content"]
+        and "物流单号：L101" in item["content"]
+        and "订单号：A101" in item["content"]
         and item["priority"] == "high"
         and item["handler"] == "客服主管"
         for item in complaints
@@ -458,13 +479,12 @@ def test_chat_endpoint_confirms_order_issue_complaint_as_high_priority():
     assert issue_response.status_code == 200
     assert "确认创建投诉" in issue_response.json()["reply"]
     assert confirm_response.status_code == 200
-    assert "已为用户创建投诉，编号 C-" in confirm_response.json()["reply"]
-    assert "优先级：high" in confirm_response.json()["reply"]
-    assert "处理人：客服主管" in confirm_response.json()["reply"]
+    assert "已为您创建投诉，投诉编号：C-" in confirm_response.json()["reply"]
+    assert "客服主管会继续跟进处理" in confirm_response.json()["reply"]
     complaints = list_response.json()
     assert any(
         item["user_id"] == "pytest-confirm-order-complaint-high"
-        and "订单号:A101" in item["content"]
+        and "订单号：A101" in item["content"]
         and item["priority"] == "high"
         and item["handler"] == "客服主管"
         for item in complaints
@@ -823,11 +843,11 @@ def test_chat_endpoint_cancels_pending_complaint_when_llm_disabled():
 
     assert issue_response.status_code == 200
     assert "确认创建投诉" in issue_response.json()["reply"]
-    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert "接入 LangGraph 工作流" in issue_response.json()["steps"]
+    assert "LangGraph 决策工具：handle_logistics_issue" in issue_response.json()["steps"]
     assert cancel_response.status_code == 200
     assert "已取消创建投诉" in cancel_response.json()["reply"]
     assert "识别意图：cancel_create_complaint" in cancel_response.json()["steps"]
-    assert "读取会话记忆：waiting_confirm" in cancel_response.json()["steps"]
     assert "清空待确认动作" in cancel_response.json()["steps"]
     assert confirm_response.status_code == 200
     assert "当前没有待确认创建的投诉" in confirm_response.json()["reply"]
@@ -852,18 +872,28 @@ def test_chat_endpoint_handles_order_issue_with_policy_when_llm_disabled():
     reply = response.json()["reply"]
     steps = response.json()["steps"]
     assert response.status_code == 200
-    assert "已同时查询订单状态和平台发货政策" in reply
+    assert "已查询到订单 A101" in reply
     assert "订单 A101" in reply
-    assert "当前状态" in reply
-    assert "发货时效规则" in reply
-    assert "建议您" in reply
-    assert "参考来源" in reply
+    assert "当前订单状态" in reply
+    assert "建议" in reply
     assert "创建投诉" in reply
-    assert "客服主管" in reply
-    assert "执行模式：规则 Agent（本次未调用 LLM）" in steps
+    assert "升级处理" in reply
+    assert "执行模式：LangGraph Agent（主客服窗口接入状态机工作流）" in steps
+    assert "回复来源：LangGraph 工作流" in steps
+    assert "接入 LangGraph 工作流" in steps
+    assert "LangGraph 决策工具：handle_order_issue" in steps
     assert "调用组合工具：handle_order_issue" in steps
     assert "内部调用：query_order" in steps
     assert "内部调用：search_knowledge" in steps
+    assert response.json()["trace"]["langgraph"]["nodes"] == [
+        "check_pending_confirmation",
+        "select_tool",
+        "call_tool",
+        "summarize_decision",
+        "assess_risk",
+        "confirm_complaint",
+    ]
+    assert response.json()["trace"]["decision_summary"]["selected_tool"] == "handle_order_issue"
     assert response.json()["trace"]["rag"]["found"] is True
     assert response.json()["trace"]["rag"]["sources"]
     assert response.json()["trace"]["rag"]["retrieval_mode"] == "hybrid_keyword_embedding"
@@ -899,7 +929,8 @@ def test_pending_complaint_does_not_block_normal_order_query():
         settings.llm_enabled = original_llm_enabled
 
     assert issue_response.status_code == 200
-    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert "接入 LangGraph 工作流" in issue_response.json()["steps"]
+    assert "LangGraph 决策工具：handle_logistics_issue" in issue_response.json()["steps"]
     assert query_response.status_code == 200
     assert "订单 A101" in query_response.json()["reply"]
     assert "已准备好投诉内容" not in query_response.json()["reply"]
@@ -931,7 +962,8 @@ def test_pending_complaint_does_not_turn_greeting_into_complaint_confirmation():
         settings.llm_enabled = original_llm_enabled
 
     assert issue_response.status_code == 200
-    assert "保存待确认动作：waiting_confirm" in issue_response.json()["steps"]
+    assert "接入 LangGraph 工作流" in issue_response.json()["steps"]
+    assert "LangGraph 决策工具：handle_logistics_issue" in issue_response.json()["steps"]
     assert greeting_response.status_code == 200
     assert "已准备好投诉内容" not in greeting_response.json()["reply"]
     assert "我只能查询订单或物流" in greeting_response.json()["reply"]
