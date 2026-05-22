@@ -97,6 +97,62 @@ def extract_bearer_token(authorization: str = None) -> str:
     return authorization[len(prefix):].strip()
 
 
+@router.get("/project/capabilities")
+def project_capabilities() -> dict:
+    return {
+        "name": "电商智能客服 Agent",
+        "summary": "基于 FastAPI、SQLite、RAG、LLM Function Calling、LangChain 和 LangGraph 的电商售后客服系统。",
+        "main_flow": [
+            "web/app.js 接收客服输入",
+            "routes.py 的 /chat 接口接收请求",
+            "agent.py 判断意图并选择执行模式",
+            "LLM / RAG / LangGraph / 工具注册表协作处理",
+            "tools.py 调用订单、物流、投诉、知识库工具",
+            "db.py 读写 SQLite",
+            "trace 和 decision_path 返回前端展示",
+        ],
+        "capabilities": [
+            {
+                "title": "LLM Function Calling",
+                "description": "让大模型根据用户问题选择工具，并在写操作前进入确认流程。",
+                "evidence": "支持工具选择、参数提取、权限检查、降级原因展示。",
+            },
+            {
+                "title": "RAG 知识库",
+                "description": "把客服政策切片、检索，并把命中来源和分数返回给前端。",
+                "evidence": "支持知识库管理、RAG 调试、RAG 自动评测。",
+            },
+            {
+                "title": "LangGraph 多工具工作流",
+                "description": "将高风险订单/物流问题拆成状态机节点，先判断风险，再等待用户确认。",
+                "evidence": "支持节点链路、工具选择、风险等级、确认创建投诉。",
+            },
+            {
+                "title": "可解释 Agent Trace",
+                "description": "每次对话都会返回 steps、trace 和 decision_path，展示 Agent 为什么这样回答。",
+                "evidence": "聊天窗口和 Agent 评测都能看到决策链路。",
+            },
+            {
+                "title": "业务后台闭环",
+                "description": "覆盖订单、物流、投诉工单、处理人分配、状态流转、备注和统计。",
+                "evidence": "支持客服和主管两种角色的售后处理流程。",
+            },
+            {
+                "title": "工程化能力",
+                "description": "包含 Docker、自动测试、日志配置、审计日志、工具日志和评测集。",
+                "evidence": "可通过 pytest、Docker Compose 和前端调试区验证。",
+            },
+        ],
+        "demo_questions": [
+            "查订单 A101",
+            "那物流呢",
+            "物流超时政策",
+            "我的订单 A101 48小时了，怎么还没发货",
+            "确认创建投诉",
+        ],
+    }
+
+
 def get_current_user_from_header(authorization: str = None) -> dict:
     token = extract_bearer_token(authorization)
     user = get_user_by_token(token)

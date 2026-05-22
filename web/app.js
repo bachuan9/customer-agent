@@ -29,6 +29,7 @@ const knowledgeBtn = document.getElementById("knowledgeBtn");
 const toolLogsBtn = document.getElementById("toolLogsBtn");
 const usersBtn = document.getElementById("usersBtn");
 const auditLogsBtn = document.getElementById("auditLogsBtn");
+const capabilitiesBtn = document.getElementById("capabilitiesBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
 const statsPending = document.getElementById("statsPending");
@@ -297,6 +298,61 @@ function appendHtmlBubble(html, role = "agent") {
   scrollToBottom();
 
   return bubble;
+}
+
+function renderCapabilitiesOverview(data) {
+  const flowItems = (data.main_flow || [])
+    .map((item, index) => `<li><span>${index + 1}</span>${escapeHtml(item)}</li>`)
+    .join("");
+  const capabilityCards = (data.capabilities || [])
+    .map(
+      (item) => `
+        <article class="capability-card">
+          <strong>${escapeHtml(item.title || "未命名能力")}</strong>
+          <p>${escapeHtml(item.description || "暂无说明")}</p>
+          <small>${escapeHtml(item.evidence || "暂无验证方式")}</small>
+        </article>
+      `
+    )
+    .join("");
+  const demoQuestions = (data.demo_questions || [])
+    .map((item) => `<button class="chip" type="button" data-message="${escapeHtml(item)}">${escapeHtml(item)}</button>`)
+    .join("");
+
+  return `
+    <div class="capabilities-overview">
+      <div class="capabilities-header">
+        <span>Project Overview</span>
+        <h3>${escapeHtml(data.name || "项目能力总览")}</h3>
+        <p>${escapeHtml(data.summary || "暂无项目摘要")}</p>
+      </div>
+      <div class="capabilities-grid">${capabilityCards}</div>
+      <div class="capabilities-flow">
+        <strong>主链路</strong>
+        <ol>${flowItems}</ol>
+      </div>
+      <div class="capabilities-demo">
+        <strong>推荐演示问题</strong>
+        <div class="chips">${demoQuestions}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function showCapabilitiesOverview() {
+  const loadingBubble = appendBubble("agent", "正在加载项目能力总览...", { typing: true });
+  try {
+    const res = await fetch(`${API_BASE}/project/capabilities`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    setBubbleHtml(loadingBubble, renderCapabilitiesOverview(data));
+    loadingBubble.classList.remove("typing");
+  } catch (err) {
+    setBubbleText(loadingBubble, "项目能力总览加载失败，请确认后端服务正在运行。");
+    loadingBubble.classList.remove("typing");
+  }
 }
 
 function setBubbleText(bubble, text) {
@@ -2347,6 +2403,8 @@ usersBtn.addEventListener("click", async () => {
 auditLogsBtn.addEventListener("click", async () => {
   await fetchAuditLogs();
 });
+
+capabilitiesBtn.addEventListener("click", showCapabilitiesOverview);
 
 knowledgeBtn.addEventListener("click", async () => {
   await loadKnowledgeArticles(true);

@@ -23,6 +23,17 @@ def test_health_endpoint_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
+def test_project_capabilities_endpoint_returns_demo_overview():
+    response = client.get("/project/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "电商智能客服 Agent"
+    assert "main_flow" in body
+    assert any(item["title"] == "RAG 知识库" for item in body["capabilities"])
+    assert any("A101" in item for item in body["demo_questions"])
+
+
 def test_chat_endpoint_uses_rule_agent_when_llm_disabled():
     original_llm_enabled = settings.llm_enabled
     settings.llm_enabled = False
