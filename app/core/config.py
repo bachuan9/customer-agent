@@ -10,7 +10,7 @@ load_dotenv()
 # config.py 阅读地图：
 # 1. load_dotenv() 读取本地 .env。
 # 2. read_bool_env(...) 把字符串环境变量转成布尔值。
-# 3. Settings 集中保存项目名、LLM、DeepSeek、Embedding 等配置。
+# 3. Settings 集中保存项目名、日志、LLM、DeepSeek、Embedding 等配置。
 # 4. 其他模块统一 import settings，避免到处直接读 os.getenv。
 
 
@@ -26,6 +26,7 @@ def read_bool_env(name: str, default: bool = False) -> bool:
 class Settings(BaseModel):
     app_name: str = os.getenv("APP_NAME", "Ecom Service Agent")
     app_env: str = os.getenv("APP_ENV", "dev")
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
     llm_enabled: bool = read_bool_env("LLM_ENABLED", False)
     llm_provider: str = os.getenv("LLM_PROVIDER", "deepseek")
     llm_model: str = os.getenv("LLM_MODEL", "deepseek-v4-flash")
