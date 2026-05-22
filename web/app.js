@@ -1064,6 +1064,7 @@ function renderAgentEvaluationResult(result) {
             </div>
             <strong>${escapeHtml(item.name)}</strong>
             <p>输入：${escapeHtml((item.messages || []).join(" -> "))}</p>
+            ${renderEvaluationDecisionPath(item.decision_path || [])}
             <p>LangGraph节点：${escapeHtml((item.langgraph_nodes || []).join(" -> ") || "无")}</p>
             <p>RAG来源：${escapeHtml((item.rag_sources || []).join(", ") || "无")}</p>
             <p>失败原因：${escapeHtml((item.failures || []).join("；") || "无")}</p>
@@ -1073,6 +1074,19 @@ function renderAgentEvaluationResult(result) {
       )
       .join("")}
   `;
+}
+
+function renderEvaluationDecisionPath(path = []) {
+  if (!path.length) {
+    return '<p>决策链路：无</p>';
+  }
+
+  const preview = path
+    .slice(0, 6)
+    .map((item, index) => `${index + 1}. ${item.title || "未命名"}：${item.detail || "暂无说明"}`)
+    .join("\n");
+  const suffix = path.length > 6 ? `\n... 还有 ${path.length - 6} 步` : "";
+  return `<pre class="eval-decision-path">${escapeHtml(preview + suffix)}</pre>`;
 }
 
 async function runRagDebug() {

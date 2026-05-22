@@ -9,4 +9,5 @@ def test_run_agent_evaluation_returns_pass_rate_and_cases():
     assert result["failed"] == 0
     assert result["pass_rate"] == 1
     assert all("name" in item for item in result["cases"])
+    assert all(item["decision_path"] for item in result["cases"])
     assert any(item["name"] == "多轮上下文补全物流" for item in result["cases"])

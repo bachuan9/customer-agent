@@ -159,6 +159,7 @@ def run_deterministic_agent_evaluation() -> Dict[str, Any]:
             "execution_mode": trace.get("execution_mode"),
             "langgraph_tool": (trace.get("langgraph") or {}).get("tool_selected"),
             "langgraph_nodes": (trace.get("langgraph") or {}).get("nodes", []),
+            "decision_path": trace.get("decision_path", []),
             "rag_found": (trace.get("rag") or {}).get("found"),
             "rag_sources": (trace.get("rag") or {}).get("sources", []),
             "passed": check["passed"],

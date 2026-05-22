@@ -1396,6 +1396,12 @@ button:disabled {
   font: 12px/1.6 "Cascadia Code", "Consolas", monospace;
 }
 
+.rag-debug-item .eval-decision-path {
+  background: #fffaf0;
+  border: 1px solid rgba(240, 180, 41, 0.22);
+  color: var(--navy);
+}
+
 .knowledge-list {
   display: grid;
   gap: 12px;
