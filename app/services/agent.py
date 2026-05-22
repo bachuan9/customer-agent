@@ -797,12 +797,9 @@ def extract_complaint_filters(message):
 def get_pending_complaint(user_id):
     # 从记忆里读取该用户是否有未完成的投诉
     data = MEMORY.get(user_id)
-    print(f"[DEBUG] get_pending_complaint: user_id={user_id}, all_data={data}")
     for item in reversed(data):
         if isinstance(item, dict) and item.get("type") == "pending_complaint":
-            print(f"[DEBUG] Found pending_complaint={item}")
             return item
-    print("[DEBUG] No pending_complaint found")
     return None
 
 
@@ -1310,7 +1307,6 @@ def handle_intent(message, user_id, intent, pending_existing):
 
         # 信息齐全，创建投诉
         content = f"订单号:{pending['order_id']} 原因:{pending['reason']}"
-        print(f"[DEBUG] Creating complaint - pending={pending}, content={content}")
         complaint_id = create_complaint(
             user_id,
             content,
@@ -1469,9 +1465,7 @@ def run_agent_trace(req):
             remember_tool_result_context(user_id, selection.get("tool_name"), selection.get("tool_result"))
             if selection.get("tool_name") == "search_knowledge":
                 trace["rag"] = build_rag_trace(selection.get("tool_result"))
-            print(f"[DEBUG] LLM selected tool: {selection['tool_name']} {selection['arguments']}")
             if selection.get("requires_confirmation"):
-                print("[DEBUG] LLM selected mutating tool; confirmation required")
                 set_pending_llm_action(
                     user_id,
                     {
@@ -1487,17 +1481,14 @@ def run_agent_trace(req):
                 reply = generate_llm_reply(message, selection)
                 trace["llm_reply_generated"] = True
                 trace["reply_source"] = "llm_reply"
-                print("[DEBUG] LLM generated final reply")
                 trace["reply"] = reply
                 return trace
             except (LLMClientError, LLMReplyError) as exc:
-                print(f"[DEBUG] LLM reply fallback to template: {exc}")
                 trace["llm_fallback_error"] = str(exc)
             trace["reply"] = format_llm_tool_selection_reply(selection)
             trace["reply_source"] = "llm_template_fallback"
             return trace
         except (LLMClientError, LLMAgentError, ValueError) as exc:
-            print(f"[DEBUG] LLM fallback to rule agent: {exc}")
             trace["execution_mode"] = "rule_agent"
             trace["selection"] = None
             trace["llm_fallback_error"] = str(exc)
@@ -1506,12 +1497,8 @@ def run_agent_trace(req):
     if intent == "create_complaint":
         MEMORY.clear(user_id)
 
-    # DEBUG: 打印接收到的消息
-    print(f"[DEBUG] user_id={user_id}, message={message}")
-
     # 如果之前有未完成投诉，即使这次没说“投诉”，也要继续投诉流程
     pending_existing = get_pending_complaint(user_id)
-    print(f"[DEBUG] pending_existing={pending_existing}")
 
     trace["reply"] = handle_intent(message, user_id, intent, pending_existing)
     if intent == "search_knowledge":
