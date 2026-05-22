@@ -31,6 +31,7 @@ const usersBtn = document.getElementById("usersBtn");
 const auditLogsBtn = document.getElementById("auditLogsBtn");
 const capabilitiesBtn = document.getElementById("capabilitiesBtn");
 const healthReportBtn = document.getElementById("healthReportBtn");
+const demoScriptBtn = document.getElementById("demoScriptBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
 const statsPending = document.getElementById("statsPending");
@@ -403,6 +404,52 @@ async function showProjectHealthReport() {
     loadingBubble.classList.remove("typing");
   } catch (err) {
     setBubbleText(loadingBubble, "项目自检失败，请确认后端服务正在运行。");
+    loadingBubble.classList.remove("typing");
+  }
+}
+
+function renderDemoScript(data) {
+  const steps = (data.steps || [])
+    .map(
+      (item, index) => `
+        <article class="demo-script-step">
+          <span>${index + 1}</span>
+          <div>
+            <strong>${escapeHtml(item.title || "演示步骤")}</strong>
+            <p><b>操作：</b>${escapeHtml(item.action || "暂无操作")}</p>
+            <p><b>讲解：</b>${escapeHtml(item.say || "暂无讲解")}</p>
+            <p><b>观察：</b>${escapeHtml(item.observe || "暂无观察点")}</p>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+
+  return `
+    <div class="demo-script-panel">
+      <div class="demo-script-header">
+        <span>Interview Demo</span>
+        <h3>${escapeHtml(data.title || "项目演示脚本")}</h3>
+        <p>${escapeHtml(data.opening || "")}</p>
+      </div>
+      <div class="demo-script-steps">${steps}</div>
+      <div class="demo-script-closing">${escapeHtml(data.closing || "")}</div>
+    </div>
+  `;
+}
+
+async function showDemoScript() {
+  const loadingBubble = appendBubble("agent", "正在加载面试演示脚本...", { typing: true });
+  try {
+    const res = await fetch(`${API_BASE}/project/demo-script`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    setBubbleHtml(loadingBubble, renderDemoScript(data));
+    loadingBubble.classList.remove("typing");
+  } catch (err) {
+    setBubbleText(loadingBubble, "演示脚本加载失败，请确认后端服务正在运行。");
     loadingBubble.classList.remove("typing");
   }
 }
@@ -2458,6 +2505,7 @@ auditLogsBtn.addEventListener("click", async () => {
 
 capabilitiesBtn.addEventListener("click", showCapabilitiesOverview);
 healthReportBtn.addEventListener("click", showProjectHealthReport);
+demoScriptBtn.addEventListener("click", showDemoScript);
 
 knowledgeBtn.addEventListener("click", async () => {
   await loadKnowledgeArticles(true);

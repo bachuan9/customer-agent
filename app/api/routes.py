@@ -254,6 +254,53 @@ def project_health_report() -> dict:
     }
 
 
+@router.get("/project/demo-script")
+def project_demo_script() -> dict:
+    return {
+        "title": "电商智能客服 Agent 面试演示脚本",
+        "opening": "这个项目不是普通聊天机器人，而是一个能调用工具、检索知识库、进入 LangGraph 工作流并展示决策链路的客服 Agent。",
+        "steps": [
+            {
+                "title": "项目总览",
+                "action": "点击“项目能力总览”",
+                "say": "先说明项目整体能力：FastAPI 后端、SQLite 业务数据、RAG 知识库、LLM Function Calling、LangGraph 多工具流程和可解释 Trace。",
+                "observe": "观察核心能力卡片和主链路。",
+            },
+            {
+                "title": "基础工具调用",
+                "action": "发送：查订单 A101",
+                "say": "展示 Agent 识别查询订单意图，并调用订单工具读取数据库。",
+                "observe": "观察回复、Agent 执行步骤和 decision_path。",
+            },
+            {
+                "title": "多轮上下文",
+                "action": "继续发送：那物流呢",
+                "say": "展示 session memory 记住上一轮订单号，用户没有重复输入 A101 也能查询关联物流。",
+                "observe": "观察物流 L101 的返回和上下文补全链路。",
+            },
+            {
+                "title": "RAG + LangGraph 高风险处理",
+                "action": "发送：我的订单 A101 48小时了，怎么还没发货",
+                "say": "展示高风险订单问题进入 LangGraph，内部调用订单、物流和知识库工具，并等待用户确认。",
+                "observe": "观察 LangGraph 节点、RAG 命中来源、风险判断和等待确认状态。",
+            },
+            {
+                "title": "确认写入投诉工单",
+                "action": "发送：确认创建投诉",
+                "say": "展示写操作不会直接执行，而是经过用户确认后才创建投诉，并自动设置高优先级和处理人。",
+                "observe": "观察投诉编号、写入结果和决策链路。",
+            },
+            {
+                "title": "自动化自检",
+                "action": "点击“项目自检”",
+                "say": "最后展示项目不是只靠手动演示，还内置 RAG/Agent 评测和可解释链路检查。",
+                "observe": "观察 RAG 评测、Agent 评测、LLM 配置和演示健康度。",
+            },
+        ],
+        "closing": "这个项目的重点是把 LLM Agent 从“能聊天”推进到“能查数据、能调用工具、能检索知识、能确认写操作、能解释决策、能自动评测”。",
+    }
+
+
 @router.get("/tool-logs")
 def tool_logs(limit: int = 20, source: str = None, success: bool = None) -> list:
     return fetch_tool_call_logs(limit=limit, source=source, success=success)

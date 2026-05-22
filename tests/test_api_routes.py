@@ -48,6 +48,17 @@ def test_project_health_report_endpoint_returns_core_checks():
     assert body["recommended_demo"]
 
 
+def test_project_demo_script_endpoint_returns_interview_steps():
+    response = client.get("/project/demo-script")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "面试演示脚本" in body["title"]
+    assert len(body["steps"]) >= 5
+    assert any("LangGraph" in item["say"] for item in body["steps"])
+    assert "能调用工具" in body["closing"]
+
+
 def test_chat_endpoint_uses_rule_agent_when_llm_disabled():
     original_llm_enabled = settings.llm_enabled
     settings.llm_enabled = False
