@@ -10,15 +10,15 @@ from app.services.tool_registry import call_tool, format_tool_error
 
 
 # Agent 主流程阅读地图：
-# 1. /chat 接口调用 run_agent_with_steps(req)，这是带步骤面板的入口。
-# 2. run_agent_with_steps(req) 调用 run_agent_trace(req)，拿到回复和 trace。
-# 3. run_agent_trace(req) 先读取 message、user_id、role 和会话记忆。
-# 4. detect_intent(message) 判断用户想查订单、查物流、创建投诉，还是确认操作。
-# 5. handle_intent(...) 进入规则 Agent 分支，执行查询、更新、投诉等业务逻辑。
-# 6. 如果开启 LLM，run_llm_tool_selection(message) 会尝试让大模型选择工具。
-# 7. call_tool(...) 通过 tool_registry 调用 tools.py 里的具体工具函数。
-# 8. format_xxx_reply(...) 把工具或数据库结果整理成用户能看懂的客服回复。
-# 9. build_agent_steps(...) 把执行过程整理成前端步骤面板。
+# 1. /chat 接口调用 run_agent_with_steps(req)，这是客服窗口的真实入口。
+# 2. run_agent_with_steps(req) 调用 run_agent_trace(req)，拿到 reply 和 trace。
+# 3. run_agent_trace(req) 读取 message、user_id、role，并用 detect_intent(message) 判断意图。
+# 4. 如果是确认类消息，优先处理 pending action，避免重复创建或误更新。
+# 5. 如果是订单/物流异常，优先调用组合工具 handle_order_issue / handle_logistics_issue。
+# 6. 如果开启 LLM，再尝试 run_llm_tool_selection(message)，失败时降级到规则 Agent。
+# 7. 规则 Agent 通过 handle_intent(...) 分发到查询、更新、投诉、备注等业务分支。
+# 8. call_tool(...) 通过 tool_registry 调用 tools.py 里的具体工具函数。
+# 9. format_xxx_reply(...) 和 build_agent_steps(...) 分别生成用户回复和前端步骤面板。
 # 10. 最终返回 reply + steps + trace 给 routes.py，再返回给 web/app.js。
 
 
@@ -154,7 +154,7 @@ TOOL_ROLE_PERMISSIONS = {
 }
 
 
-# 2. 简单查询回复：把订单/物流查询结果组织成回复文字。
+# 2. 基础查询回复：把订单/物流查询结果组织成回复文字。
 def format_order_status_reply(order_no, status):
     label = ORDER_STATUS_LABELS.get(status, status)
     return f"您的订单 {order_no} 当前状态是：{label}。"
@@ -189,7 +189,7 @@ def check_logistics(tracking_no, user_id=None):
 
 
 
-# 3. 信息提取函数：从用户输入里提取编号、状态、优先级、处理人等。
+# 3. 信息提取和上下文记忆：从用户输入里提取编号、状态、优先级，并保存多轮上下文。
 def extract_id(message, prefix):
     # 从一句话里提取以 prefix 开头的编号（如 A001 或 L002）
     # 兼容无空格和中文标点写法
@@ -354,7 +354,7 @@ def detect_intent(message):
     return "unknown"
 
 
-# 5. 回复格式化：把更新结果、列表结果、备注结果整理成用户能读的话。
+# 5. 回复格式化：把工具结果、更新结果、列表结果、备注结果整理成用户能读的话。
 def format_order_update_reply(result):
     if result["updated"]:
         order = result["order"]
@@ -453,7 +453,7 @@ def format_complaint_detail_reply(result):
     return "\n".join(lines)
 
 
-# 5.1 LLM 工具结果回复：把 LLM 选中的工具结果转成用户能看懂的中文。
+# 5.1 LLM 和组合工具回复：把工具结果转成用户能看懂的中文。
 def format_knowledge_no_answer_reply():
     return (
         "暂未在知识库中找到可靠的相关政策。"
@@ -791,7 +791,7 @@ def extract_complaint_filters(message):
     return {"status": status, "priority": priority, "handler": handler}
 
 
-# 7. 会话记忆辅助函数：保存多轮投诉流程和待确认更新。
+# 7. Pending 状态和权限辅助函数：保存多轮投诉流程、待确认更新、待确认 LLM 动作。
 def get_pending_complaint(user_id):
     # 从记忆里读取该用户是否有未完成的投诉
     data = MEMORY.get(user_id)
@@ -848,7 +848,7 @@ def format_permission_denied_reply(role, tool_name):
     return f"当前角色“{role_label}”没有权限执行 {tool_name}，请切换为主管角色后再确认。"
 
 
-# 8. 更新确认流程：处理订单/物流这类需要二次确认的修改。
+# 8. 二次确认流程：处理订单/物流更新、LLM 写操作、创建投诉确认。
 def handle_confirm_update(message, user_id, pending_update):
     if not pending_update:
         return "当前没有待确认的更新操作，请先发起更新。"
@@ -1039,7 +1039,7 @@ def build_agent_steps(
     return steps
 
 
-# 9. 主意图分发：根据识别出的 intent 进入对应处理分支。
+# 9. 规则 Agent 主分发：根据识别出的 intent 进入对应处理分支。
 def handle_intent(message, user_id, intent, pending_existing):
     if intent == "confirm_llm_action":
         return handle_confirm_llm_action(user_id)
@@ -1365,6 +1365,7 @@ def handle_intent(message, user_id, intent, pending_existing):
     return "我只能查询订单或物流，请再说一次。"
 
 
+# 10. 主 Agent 执行链路：先处理高优先级分支，再尝试 LLM，最后规则兜底。
 def run_agent_trace(req):
     # 取出用户输入的一句话
     message = req.message
@@ -1529,7 +1530,7 @@ def run_agent_trace(req):
     return trace
 
 
-# 10. Agent 入口：每一次 /chat 请求都会从这里开始。
+# 11. Agent 对外入口：每一次 /chat 请求都会从这里开始。
 def run_agent(req):
     return run_agent_trace(req)["reply"]
 

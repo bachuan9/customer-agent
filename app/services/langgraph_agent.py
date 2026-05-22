@@ -25,6 +25,7 @@ class LangGraphAgentState(TypedDict, total=False):
     pending_confirmation: Optional[Dict[str, Any]]
     is_confirm_message: bool
     selection: Dict[str, Any]
+    decision_summary: Dict[str, Any]
     reply: str
     trace: Dict[str, Any]
     tool_result: Optional[Dict[str, Any]]
@@ -40,6 +41,7 @@ def run_langgraph_agent(question: str, user_id: str = "anonymous") -> Dict[str, 
         "user_id": final_state["user_id"],
         "reply": final_state["reply"],
         "trace": final_state["trace"],
+        "decision_summary": final_state.get("decision_summary"),
         "tool_result": final_state.get("tool_result"),
         "created_complaint": final_state.get("created_complaint"),
     }
@@ -53,6 +55,7 @@ def build_langgraph_workflow():
     graph.add_node("create_complaint", create_complaint_node)
     graph.add_node("select_tool", select_tool_node)
     graph.add_node("call_tool", call_tool_node)
+    graph.add_node("summarize_decision", summarize_decision_node)
     graph.add_node("assess_risk", assess_risk_node)
     graph.add_node("confirm_complaint", confirm_complaint_node)
     graph.add_node("no_tool_reply", no_tool_reply_node)
@@ -76,7 +79,8 @@ def build_langgraph_workflow():
             "no_tool_reply": "no_tool_reply",
         },
     )
-    graph.add_edge("call_tool", "assess_risk")
+    graph.add_edge("call_tool", "summarize_decision")
+    graph.add_edge("summarize_decision", "assess_risk")
     graph.add_conditional_edges(
         "assess_risk",
         route_after_assess_risk,
@@ -209,7 +213,22 @@ def call_tool_node(state: LangGraphAgentState) -> Dict[str, Any]:
     }
 
 
-# 7. 风险判断：判断这次问题是否需要“先确认，再建单”。
+# 7. 决策解释：把工具选择、工具结果和下一步建议整理成给人看的解释。
+def summarize_decision_node(state: LangGraphAgentState) -> Dict[str, Any]:
+    decision_summary = build_decision_summary(
+        question=state["question"],
+        selection=state["selection"],
+        tool_result=state.get("tool_result"),
+    )
+    trace = {
+        **state["trace"],
+        "nodes": state["trace"]["nodes"] + ["summarize_decision"],
+        "decision_summary": decision_summary,
+    }
+    return {"decision_summary": decision_summary, "trace": trace}
+
+
+# 8. 风险判断：判断这次问题是否需要“先确认，再建单”。
 def assess_risk_node(state: LangGraphAgentState) -> Dict[str, Any]:
     risk_level = assess_risk_level(state["question"], state.get("tool_result"))
     trace = {
@@ -226,7 +245,7 @@ def route_after_assess_risk(state: LangGraphAgentState) -> str:
     return "end"
 
 
-# 8. 高风险确认：第一轮不直接写数据库，而是保存一个待确认动作。
+# 9. 高风险确认：第一轮不直接写数据库，而是保存一个待确认动作。
 def confirm_complaint_node(state: LangGraphAgentState) -> Dict[str, Any]:
     pending = {
         "type": PENDING_CONFIRMATION_TYPE,
@@ -254,7 +273,7 @@ def confirm_complaint_node(state: LangGraphAgentState) -> Dict[str, Any]:
     }
 
 
-# 9. 没选中工具：给出兜底回复，避免用户收到空结果。
+# 10. 没选中工具：给出兜底回复，避免用户收到空结果。
 def no_tool_reply_node(state: LangGraphAgentState) -> Dict[str, Any]:
     available_tools = [tool.name for tool in list_langchain_tools()]
     reason = "confirm_message_without_pending" if state.get("is_confirm_message") else "no_tool_selected"
@@ -273,7 +292,7 @@ def no_tool_reply_node(state: LangGraphAgentState) -> Dict[str, Any]:
     }
 
 
-# 10. 辅助函数：下面这些函数不决定主流程，只帮助节点完成判断和存取。
+# 11. 辅助函数：下面这些函数不决定主流程，只帮助节点完成判断和存取。
 def select_langgraph_tool(question: str) -> Dict[str, Any]:
     order_no = extract_order_no(question)
     if order_no:
@@ -405,3 +424,59 @@ def build_business_tool_trace(result: Dict[str, Any]) -> Dict[str, Any]:
         "llm_used": False,
         "fallback_reason": None,
     }
+
+
+def build_decision_summary(
+    question: str,
+    selection: Dict[str, Any],
+    tool_result: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    tool_name = selection.get("tool_name")
+    tool_result = tool_result or {}
+
+    if tool_name == "handle_order_issue":
+        evidence = [
+            f"识别到订单号 {tool_result.get('order_no', selection.get('arguments', {}).get('order_no', '未知'))}",
+            f"订单状态为 {tool_result.get('order_status', '未知')}",
+        ]
+        if tool_result.get("tracking_no"):
+            evidence.append(
+                f"关联物流 {tool_result.get('tracking_no')}，物流状态为 {tool_result.get('logistics_status', '未知')}"
+            )
+        next_step = "如果用户确认继续处理，就创建高优先级投诉并交给客服主管跟进。"
+    elif tool_name == "handle_logistics_issue":
+        evidence = [
+            f"识别到物流单号 {tool_result.get('tracking_no', selection.get('arguments', {}).get('tracking_no', '未知'))}",
+            f"物流状态为 {tool_result.get('logistics_status', '未知')}",
+        ]
+        if tool_result.get("order_no"):
+            evidence.append(f"关联订单号为 {tool_result.get('order_no')}")
+        next_step = "如果物流长时间未更新，就建议升级为投诉或人工核实。"
+    elif tool_name == "search_knowledge":
+        evidence = [
+            f"用户问题更像政策咨询：{question}",
+            f"知识库命中：{'是' if tool_result.get('found') else '否'}",
+        ]
+        if tool_result.get("title"):
+            evidence.append(f"命中文章：{tool_result.get('title')}")
+        next_step = "优先基于知识库回答；如果问题涉及超时、赔付或投诉，再进入高风险确认。"
+    else:
+        evidence = ["没有选中可执行工具，因此不进行业务写操作。"]
+        next_step = "请用户补充订单号、物流号或更明确的问题。"
+
+    return {
+        "selected_tool": tool_name,
+        "why_this_tool": build_tool_selection_reason(tool_name),
+        "evidence": evidence,
+        "next_step": next_step,
+    }
+
+
+def build_tool_selection_reason(tool_name: Optional[str]) -> str:
+    if tool_name == "handle_order_issue":
+        return "用户问题中包含订单编号，所以优先调用订单组合工具。"
+    if tool_name == "handle_logistics_issue":
+        return "用户问题中包含物流编号，所以优先调用物流组合工具。"
+    if tool_name == "search_knowledge":
+        return "用户问题没有明确业务编号，更适合先查知识库政策。"
+    return "当前问题没有匹配到明确工具。"

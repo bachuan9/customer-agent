@@ -7,6 +7,13 @@ from app.storage.db import (
 )
 
 
+# database_session.py 阅读地图：
+# 1. DatabaseSessionStore 是 Agent 的持久化会话记忆包装类。
+# 2. append(...) 把 pending action / recent context 这类对象存进 SQLite。
+# 3. get(...) 读取并反序列化会话对象。
+# 4. clear(...) 清空某个用户的会话状态。
+
+
 class DatabaseSessionStore:
     """会话存储类，支持多用户状态跟踪（基于 SQLite 持久化）"""
 

@@ -67,7 +67,39 @@ APP_DB_PATH 用来指定 SQLite 数据库文件位置。
 
 ## 3. 启动后端
 
-开发启动命令：
+### 3.1 Docker 启动（推荐用于运行和演示）
+
+如果你只是运行项目、测试网页、给别人演示，推荐使用 Docker：
+
+```powershell
+docker compose up --build -d
+```
+
+这个命令会读取 `docker-compose.yml`，构建镜像并启动 `customer-agent` 容器。
+
+如果你修改了后端或前端代码，需要重新构建：
+
+```powershell
+docker compose up --build -d
+```
+
+停止 Docker 服务：
+
+```powershell
+docker compose down
+```
+
+### 3.2 本地开发启动
+
+如果你要边写代码边调试，可以用本地 Python 启动。
+
+注意：Docker 和本地服务不要同时占用 `8001`。如果 Docker 已经在运行，先执行：
+
+```powershell
+docker compose down
+```
+
+本地开发启动命令：
 
 ```powershell
 .\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
@@ -552,7 +584,7 @@ node --check web\app.js
 检查 Python 编译：
 
 ```powershell
-.\.venv311\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app scripts
 ```
 
 推荐提交前完整检查：
@@ -560,13 +592,15 @@ node --check web\app.js
 ```powershell
 .\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv311\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app scripts
 ```
 
 如果 `.env` 开启了真实 LLM，全量 pytest 可能因为网络请求变慢。可以先跑主线核心测试：
 
 ```powershell
-.\.venv311\Scripts\python.exe -m pytest tests\test_langgraph_agent.py tests\test_langchain_agent.py tests\test_langchain_rag_agent.py tests\test_langchain_tools.py tests\test_langchain_retriever.py tests\test_api_routes.py -q
+.\.venv311\Scripts\python.exe -m pytest tests\test_db_layer.py tests\test_api_routes.py tests\test_agent_core.py tests\test_langgraph_agent.py -q
+.\.venv311\Scripts\python.exe -m pytest tests\test_langchain_agent.py tests\test_langchain_rag_agent.py tests\test_langchain_tools.py tests\test_langchain_retriever.py tests\test_knowledge_rag.py -q
+.\.venv311\Scripts\python.exe -m pytest tests\test_agent_evaluation.py -q
 ```
 
 ## 7. 常用接口
@@ -681,7 +715,7 @@ Copy-Item data\complaints.backup.db data\complaints.db -Force
 推荐命令：
 
 ```powershell
-.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
+docker compose up --build -d
 ```
 
 然后访问：
@@ -814,7 +848,7 @@ practice/
 ```powershell
 .\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv311\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app scripts
 ```
 
 如果要提交代码但不提交学习文档：

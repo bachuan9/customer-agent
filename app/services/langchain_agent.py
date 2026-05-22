@@ -6,6 +6,13 @@ from app.services.langchain_tools import list_langchain_tools
 from app.services.llm_client import LLMClientError, call_llm
 
 
+# langchain_agent.py 阅读地图：
+# 1. run_langchain_agent(...) 是 LangChain Agent 实验入口。
+# 2. select_tool_with_llm_fallback(...) 先让 LLM 选工具，失败就用关键词规则兜底。
+# 3. search_knowledge 命中后交给 LangChain RAG 链路生成回复。
+# 4. build_tool_reply(...) / build_no_tool_reply(...) 统一返回 reply + trace。
+
+
 POLICY_KEYWORDS = [
     "退款",
     "退货",
@@ -26,6 +33,7 @@ class LangChainAgentSelectionError(RuntimeError):
     pass
 
 
+# 1. LangChain Agent 入口：选择工具，然后决定是否进入 RAG 链路。
 def run_langchain_agent(question: str) -> Dict[str, Any]:
     selection = select_tool_with_llm_fallback(question)
     tool_name = selection["tool_name"]
@@ -38,6 +46,7 @@ def run_langchain_agent(question: str) -> Dict[str, Any]:
     return build_no_tool_reply(question, selection)
 
 
+# 2. 工具选择：优先 LLM，失败后用确定性关键词规则。
 def select_tool_with_llm_fallback(question: str) -> Dict[str, Any]:
     try:
         selection = select_langchain_tool_with_llm(question)
@@ -54,6 +63,7 @@ def select_tool_with_llm_fallback(question: str) -> Dict[str, Any]:
         }
 
 
+# 3. LLM 工具选择细节：构造提示词、解析 JSON、校验工具名。
 def select_langchain_tool_with_llm(question: str) -> Dict[str, Any]:
     messages = build_tool_selection_messages(question)
     llm_response = call_llm(messages)
@@ -112,6 +122,7 @@ def parse_tool_selection_response(llm_response: Dict[str, Any], question: str) -
     raise LangChainAgentSelectionError(f"Unsupported tool selected: {tool_name}")
 
 
+# 4. 规则兜底工具选择：政策类关键词命中时选择 search_knowledge。
 def select_langchain_tool(question: str) -> Optional[str]:
     normalized_question = question.lower().replace(" ", "")
     for keyword in POLICY_KEYWORDS:
@@ -121,6 +132,7 @@ def select_langchain_tool(question: str) -> Optional[str]:
     return None
 
 
+# 5. 响应包装：把工具结果整理成前端能展示的 reply + trace。
 def build_tool_reply(question: str, result: Dict[str, Any], selection: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "question": question,

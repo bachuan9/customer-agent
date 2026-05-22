@@ -514,3 +514,278 @@ agent_suggestion
 工具结果会进入风险评估节点，如果工具判断 suggest_complaint 为 true，就进入高风险确认流程，等待用户确认后再创建投诉。
 这个设计把 LLM、规则、业务工具、RAG、LangGraph 状态机串成了一条完整 Agent 工作流。
 ```
+
+## 9. LangGraph 决策解释节点
+
+这一节把 LangGraph 从“能执行流程”升级成“能解释流程”。
+
+之前的 LangGraph 流程是：
+
+```text
+check_pending_confirmation
+-> select_tool
+-> call_tool
+-> assess_risk
+-> confirm_complaint / END
+```
+
+新增决策解释节点后，流程变成：
+
+```text
+check_pending_confirmation
+-> select_tool
+-> call_tool
+-> summarize_decision
+-> assess_risk
+-> confirm_complaint / END
+```
+
+### 9.1 为什么要加 summarize_decision
+
+Trace 更像开发者看的执行记录：
+
+```text
+选择了哪个工具
+工具参数是什么
+是否命中知识库
+风险等级是什么
+```
+
+但是面试官、客服或业务人员更关心：
+
+```text
+为什么选这个工具？
+查到了哪些关键证据？
+为什么下一步建议这样处理？
+```
+
+所以新增 `summarize_decision` 节点，用来把工具选择和工具结果整理成一段可解释的业务结论。
+
+### 9.2 summarize_decision_node(...)
+
+位置：
+
+```text
+app/services/langgraph_agent.py
+```
+
+作用：
+
+```text
+把当前 state 里的 question、selection、tool_result 整理成 decision_summary。
+```
+
+参数从哪里来：
+
+```text
+state["question"]
+-> 来自前端传入的用户问题
+
+state["selection"]
+-> 来自 select_tool_node
+-> 里面有 tool_name 和 arguments
+
+state["tool_result"]
+-> 来自 call_tool_node
+-> 里面有订单、物流、知识库或工具执行结果
+```
+
+它调用：
+
+```text
+build_decision_summary(
+    question=state["question"],
+    selection=state["selection"],
+    tool_result=state.get("tool_result"),
+)
+```
+
+返回值：
+
+```text
+{
+  "decision_summary": decision_summary,
+  "trace": trace
+}
+```
+
+返回到哪里：
+
+```text
+返回给 LangGraph 的 state
+-> 下一个节点 assess_risk_node 继续使用同一个 state
+-> 最终 run_langgraph_agent(...) 把 decision_summary 返回给 routes.py
+-> routes.py 返回给前端
+-> web/app.js 渲染成“决策解释”卡片
+```
+
+### 9.3 decision_summary 里面有什么
+
+`decision_summary` 是一个字典，大概长这样：
+
+```json
+{
+  "selected_tool": "handle_order_issue",
+  "why_this_tool": "用户问题中包含订单编号，所以优先调用订单组合工具。",
+  "evidence": [
+    "识别到订单号 A101",
+    "订单状态为 shipped",
+    "关联物流 L101，物流状态为 delivered"
+  ],
+  "next_step": "如果用户确认继续处理，就创建高优先级投诉并交给客服主管跟进。"
+}
+```
+
+字段含义：
+
+```text
+selected_tool
+-> 这次选择了哪个工具
+
+why_this_tool
+-> 为什么选这个工具
+
+evidence
+-> 工具查到的关键证据
+
+next_step
+-> 基于这些证据，下一步建议怎么处理
+```
+
+### 9.4 build_decision_summary(...)
+
+位置：
+
+```text
+app/services/langgraph_agent.py
+```
+
+作用：
+
+```text
+根据不同工具，生成不同的解释。
+```
+
+如果工具是 `handle_order_issue`：
+
+```text
+说明用户问题里有订单号。
+证据会包含订单号、订单状态、关联物流和物流状态。
+```
+
+如果工具是 `handle_logistics_issue`：
+
+```text
+说明用户问题里有物流号。
+证据会包含物流单号、物流状态、关联订单号。
+```
+
+如果工具是 `search_knowledge`：
+
+```text
+说明用户问题更像政策咨询。
+证据会包含是否命中知识库、命中文章标题。
+```
+
+为什么这样写：
+
+```text
+不同工具代表不同业务场景。
+订单问题、物流问题、政策问题需要展示的证据不一样。
+所以这里不是写一个固定模板，而是按 tool_name 分支生成解释。
+```
+
+### 9.5 前端怎么看
+
+位置：
+
+```text
+web/app.js
+```
+
+新增函数：
+
+```text
+renderLangGraphDecisionSummary(decisionSummary)
+```
+
+作用：
+
+```text
+把后端返回的 decision_summary 渲染成“决策解释”卡片。
+```
+
+前端渲染顺序：
+
+```text
+Agent 回复
+-> 节点执行流水线
+-> 决策解释
+-> LangGraph Trace
+-> 工具结构化结果
+```
+
+为什么放在 Trace 前面：
+
+```text
+决策解释更适合人先看。
+Trace 更适合开发者排查细节。
+所以页面先展示容易理解的解释，再展示更底层的 Trace。
+```
+
+### 9.6 这一步的面试说法
+
+```text
+我在 LangGraph 工作流里新增了一个 summarize_decision 节点。
+这个节点不直接调用外部工具，也不直接写数据库，而是专门负责解释 Agent 的决策。
+它会读取前面 select_tool 和 call_tool 节点产生的状态，比如选择了哪个工具、工具返回了什么业务数据，然后生成 selected_tool、why_this_tool、evidence 和 next_step。
+这样前端不仅能看到节点执行流水线，还能看到 Agent 为什么这样处理。
+这体现了 Agent 的可解释性，也方便排查工具选择错误、RAG 命中不准或风险判断不合理的问题。
+```
+
+### 9.7 测试结果
+
+本次测试链路：
+
+```text
+用户输入：我的物流 L101 48小时了，怎么还没更新
+-> select_tool 选择 handle_logistics_issue
+-> call_tool 调用物流组合工具
+-> summarize_decision 生成决策解释
+-> assess_risk 判断 high
+-> confirm_complaint 等待用户确认
+```
+
+确认后：
+
+```text
+用户输入：确认创建投诉
+-> check_pending_confirmation 找到上一轮待确认动作
+-> create_complaint 创建投诉
+-> 返回投诉编号
+```
+
+实际验证结果：
+
+```text
+first_nodes:
+check_pending_confirmation
+-> select_tool
+-> call_tool
+-> summarize_decision
+-> assess_risk
+-> confirm_complaint
+
+first_tool:
+handle_logistics_issue
+
+first_has_summary:
+true
+
+second_nodes:
+check_pending_confirmation
+-> create_complaint
+
+created_status:
+created
+```

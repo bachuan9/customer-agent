@@ -6,6 +6,12 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+# db.py 阅读地图：
+# 1. 顶部是业务规则常量和 SQLite 连接。
+# 2. init_db() 是启动时的总建表入口，会依次创建/迁移所有表。
+# 3. 中间按业务域分组：用户、会话、聊天记录、日志、知识库、投诉、订单、物流。
+# 4. routes.py 和 tools.py 不直接写 SQL，而是调用这里的函数完成增删查改。
+
 # 1. 业务规则常量：限制订单、物流、投诉可以使用的状态和优先级。
 ALLOWED_LOGISTICS_STATUSES = {"pending", "in_transit", "delivered"}
 ALLOWED_COMPLAINT_STATUSES = {"pending", "processing", "resolved"}
@@ -838,7 +844,7 @@ def init_complaint_notes_table() -> None:
         conn.commit()
 
 
-# 7. 知识库表：保存可以通过后台维护的客服政策和规则。
+# 11. 知识库表：保存可以通过后台维护的客服政策和规则。
 def init_knowledge_articles_table() -> None:
     with get_connection() as conn:
         conn.execute(
@@ -1120,7 +1126,7 @@ def build_complaint_follow_up_status(complaint: Dict[str, str]) -> Dict[str, str
     }
 
 
-# 8. 投诉工单：创建、查询、筛选投诉记录。
+# 12. 投诉工单：创建、查询、筛选投诉记录。
 def insert_complaint(
     user_id: str,
     content: str,
@@ -1213,7 +1219,7 @@ def fetch_complaint_stats() -> Dict[str, int]:
     }
 
 
-# 9. 单条投诉查询：根据 C-xxxx 找到对应投诉。
+# 13. 单条投诉查询：根据 C-xxxx 找到对应投诉。
 def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
     try:
         numeric_id = int(complaint_id[2:] if complaint_id.upper().startswith("C-") else complaint_id)
@@ -1242,7 +1248,7 @@ def get_complaint_by_id(complaint_id: str) -> Optional[Dict[str, str]]:
     return complaint
 
 
-# 10. 投诉更新：更新状态、优先级、处理人和时间字段。
+# 14. 投诉更新：更新状态、优先级、处理人和时间字段。
 def update_complaint(
     complaint_id: str,
     *,
@@ -1292,7 +1298,7 @@ def update_complaint(
     return get_complaint_by_id(complaint_id)
 
 
-# 11. 投诉备注：添加、查询、修改、删除 complaint_notes 子记录。
+# 15. 投诉备注：添加、查询、修改、删除 complaint_notes 子记录。
 def insert_complaint_note(complaint_id: str, content: str, author: str = "客服") -> Optional[Dict[str, str]]:
     complaint = get_complaint_by_id(complaint_id)
     if complaint is None:
@@ -1404,7 +1410,7 @@ def delete_complaint_note(note_id: str) -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
-# 12. 订单数据：创建、查询、列表、更新订单。
+# 16. 订单数据：创建、查询、列表、更新订单。
 def insert_order(order_no: str, user_id: str, status: str = "pending") -> Dict[str, str]:
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_connection() as conn:
@@ -1481,7 +1487,7 @@ def update_order_status(order_no: str, new_status: str) -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
-# 13. 物流数据：创建、查询、列表、更新物流。
+# 17. 物流数据：创建、查询、列表、更新物流。
 def init_logistics_table() -> None:
     with get_connection() as conn:
         conn.execute(

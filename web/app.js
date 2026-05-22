@@ -1,3 +1,9 @@
+// 前端主流程阅读地图：
+// 1. 先获取页面元素和基础配置。
+// 2. 再定义通用工具函数、登录状态、聊天气泡和 trace 渲染。
+// 3. 然后定义知识库、聊天发送、列表查询、日志、审计和用户管理函数。
+// 4. 最后统一绑定按钮点击、表单提交和页面初始化事件。
+
 // 1. 页面元素：从 HTML 里拿到后面要操作的按钮、输入框、聊天区域。
 const chatBody = document.getElementById("chatBody");
 const chatForm = document.getElementById("chatForm");
@@ -409,11 +415,36 @@ function renderLangGraphTrace(trace = {}) {
   `;
 }
 
+function renderLangGraphDecisionSummary(decisionSummary = {}) {
+  if (!decisionSummary || !decisionSummary.selected_tool) {
+    return "";
+  }
+
+  const evidenceItems = (decisionSummary.evidence || [])
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+
+  return `
+    <div class="langgraph-decision">
+      <div>
+        <strong>决策解释</strong>
+        <p>${escapeHtml(decisionSummary.why_this_tool || "暂无工具选择原因。")}</p>
+      </div>
+      ${evidenceItems ? `<ul>${evidenceItems}</ul>` : ""}
+      <div class="langgraph-next-step">
+        <span>下一步建议</span>
+        <p>${escapeHtml(decisionSummary.next_step || "暂无建议。")}</p>
+      </div>
+    </div>
+  `;
+}
+
 function getLangGraphNodeLabel(nodeName) {
   const labels = {
     check_pending_confirmation: "检查待确认",
     select_tool: "选择工具",
     call_tool: "调用工具",
+    summarize_decision: "决策解释",
     assess_risk: "风险判断",
     confirm_complaint: "等待确认",
     create_complaint: "创建投诉",
@@ -495,6 +526,7 @@ function renderLangGraphResult(data) {
         <p>${escapeHtml(data.reply || "（无回复）")}</p>
       </div>
       ${renderLangGraphFlow(data.trace || {})}
+      ${renderLangGraphDecisionSummary(data.decision_summary || data.trace?.decision_summary || {})}
       ${renderLangGraphTrace(data.trace || {})}
       ${renderLangGraphToolResult(data.tool_result)}
       ${data.created_complaint ? renderLangGraphToolResult({ created_complaint: data.created_complaint }) : ""}
@@ -1704,8 +1736,7 @@ function bindAuditLogFilter(container) {
   });
 }
 
-// 9. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
-// 9. 用户管理：主管可以查看账号、新增账号、调整普通客服/主管角色。
+// 10. 用户管理：主管可以查看账号、新增账号、调整普通客服/主管角色。
 function canManageUsers() {
   return currentUser?.role === "manager";
 }
@@ -1984,6 +2015,7 @@ function bindUserManagementPanel(container) {
   });
 }
 
+// 11. 输入和点击事件：处理发送、回车、快捷话术、动态按钮点击。
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
@@ -2084,7 +2116,7 @@ clearBtn.addEventListener("click", async () => {
 
 chatSessionsBtn.addEventListener("click", loadChatSessions);
 
-// 9. 投诉列表查询：渲染投诉记录和每行操作按钮。
+// 12. 投诉列表查询：渲染投诉记录和每行操作按钮。
 function buildComplaintQuery(params = {}) {
   const queryParams = new URLSearchParams();
 
@@ -2202,7 +2234,7 @@ followUpQueueBtn.addEventListener("click", async () => {
   });
 });
 
-// 10. 订单和物流列表查询。
+// 13. 订单、物流、日志、用户、知识库按钮绑定。
 ordersBtn.addEventListener("click", async () => {
   await fetchList("/orders", "暂无订单记录。", [
     { key: "order_no", label: "订单号" },

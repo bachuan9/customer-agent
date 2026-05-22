@@ -80,6 +80,14 @@ from app.services.tools import get_complaint_detail, rebuild_knowledge_index, ru
 router = APIRouter()
 
 
+# routes.py 阅读地图：
+# 1. 先看认证和权限辅助函数，它们会被后面的管理接口复用。
+# 2. 再看基础检查、工具日志、审计日志和工具说明接口。
+# 3. 然后看登录、用户管理和客服聊天主入口 /chat。
+# 4. 最后看投诉、订单、物流、知识库、LangChain 和 LangGraph 接口。
+
+
+# 0. 认证和权限辅助函数：从请求头里取 token，并判断当前用户能不能执行操作。
 def extract_bearer_token(authorization: str = None) -> str:
     if not authorization:
         return ""
@@ -142,7 +150,7 @@ def write_audit_log(
     )
 
 
-# 1. 基础检查接口：用来确认后端服务是否正常运行。
+# 1. 基础检查和可观测接口：确认服务是否正常，并查看工具/审计/Function Calling 信息。
 @router.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
@@ -181,7 +189,7 @@ def function_calling_tools() -> list:
     return list_function_calling_tools()
 
 
-# 2. 登录接口：先确认“你是谁”，后续权限才有依据。
+# 2. 登录和用户管理接口：先确认“你是谁”，再允许主管管理账号。
 @router.post("/auth/login")
 def login(req: LoginRequest) -> dict:
     result = login_user(req.username, req.password)
@@ -378,6 +386,7 @@ def reset_user_password_endpoint(
     return user
 
 
+# 3. 客服聊天主入口：前端客服窗口会 POST /chat，然后进入 run_agent_with_steps(...)。
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, authorization: str = Header(default=None)) -> ChatResponse:
     token = extract_bearer_token(authorization)
@@ -438,7 +447,7 @@ def delete_chat_history(user_id: str, authorization: str = Header(default=None))
     return {"deleted": deleted, "session_cleared": True}
 
 
-# 4. 投诉列表接口：支持按 user_id、status、priority、handler、follow_up_status 筛选投诉。
+# 4. 投诉接口：查询投诉列表、统计、详情、状态流转和备注。
 @router.get("/complaints")
 def complaints(
     user_id: str = None,
@@ -539,7 +548,6 @@ def update_logistics(tracking_no: str, req: LogisticsUpdateRequest) -> dict:
     return {"tracking_no": tracking_no, "status": req.status}
 
 
-# 8. 投诉更新接口：普通 REST API 修改 status、priority、handler。
 @router.get("/complaints/{complaint_id}")
 def complaint_detail(complaint_id: str) -> dict:
     detail = get_complaint_detail(complaint_id)
@@ -570,7 +578,6 @@ def update_complaint_endpoint(complaint_id: str, req: ComplaintUpdateRequest) ->
     return updated
 
 
-# 9. 投诉备注接口：添加、查询、删除某条投诉备注。
 @router.post("/complaints/{complaint_id}/notes")
 def create_complaint_note(complaint_id: str, req: ComplaintNoteCreateRequest) -> dict:
     try:
@@ -611,7 +618,7 @@ def delete_note(note_id: str) -> dict:
     return {"deleted": True, "note_id": note_id}
 
 
-# 10. 知识库管理接口：让前端可以维护 Agent 会检索的客服政策。
+# 9. 知识库和 Agent 实验接口：维护 RAG 知识，并单独测试 LangChain / LangGraph。
 @router.get("/knowledge")
 def knowledge_articles(include_disabled: bool = True, query: str = None, tag: str = None) -> list:
     return fetch_knowledge_articles(include_disabled=include_disabled, query_text=query, tag=tag)

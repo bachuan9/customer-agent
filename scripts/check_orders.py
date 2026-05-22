@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+"""
+订单/物流数据层验证脚本。
+
+阅读顺序：
+1. 初始化数据库表
+2. 新增订单
+3. 查询订单
+4. 更新订单状态
+5. 新增物流
+6. 查询物流
+7. 更新物流状态
+
+这个脚本不经过前端和 FastAPI，只直接测试 db.py 里的数据库函数。
+"""
 from app.storage.db import (
     init_db,
     get_order_status,
@@ -11,7 +25,8 @@ from app.storage.db import (
 
 
 def main() -> None:
-    # 1) 先初始化数据库和表（如果表已存在会自动跳过，不会重复创建）
+    # 第一步：先初始化数据库和表。
+    # 如果表已存在，CREATE TABLE IF NOT EXISTS 会自动跳过，不会重复创建。
     init_db()
 
     print("=" * 60)
@@ -19,7 +34,8 @@ def main() -> None:
     print("目标：验证 新增 -> 查询 -> 更新 -> 再查询 这条链路是否可用")
     print("=" * 60)
 
-    # 为了方便重复运行脚本，这里每次都用新的编号，避免 UNIQUE 冲突
+    # 第二步：准备测试编号。
+    # 为了方便重复运行脚本，这里使用固定编号；如果遇到 UNIQUE 冲突，可以换成新编号。
     order_no = "A101"
     tracking_no = "L101"
     user_id = "u001"

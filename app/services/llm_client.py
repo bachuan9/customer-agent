@@ -7,10 +7,17 @@ from typing import Any, Dict, List, Optional
 from app.core.config import settings
 
 
+# llm_client.py 阅读地图：
+# 1. ensure_llm_ready() 先检查是否允许调用真实 LLM。
+# 2. call_llm(...) 组装 DeepSeek 请求，支持普通对话和工具列表。
+# 3. 网络、超时、HTTP、JSON 错误统一转成 LLMClientError，方便上层降级。
+
+
 class LLMClientError(RuntimeError):
     pass
 
 
+# 1. 调用前检查：没有开启 LLM、没有 key、provider 不支持时，直接阻止调用。
 def ensure_llm_ready() -> None:
     if not settings.llm_enabled:
         raise LLMClientError("LLM is disabled")
@@ -20,6 +27,7 @@ def ensure_llm_ready() -> None:
         raise LLMClientError("DEEPSEEK_API_KEY is not configured")
 
 
+# 2. 真实 LLM 请求：把 messages/tools 发给 DeepSeek chat completions 接口。
 def call_llm(
     messages: List[Dict[str, str]],
     tools: Optional[List[Dict[str, Any]]] = None,

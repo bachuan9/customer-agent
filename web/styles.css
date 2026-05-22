@@ -685,6 +685,52 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.langgraph-decision {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(25, 164, 106, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(25, 164, 106, 0.12), transparent 32%),
+    #ffffff;
+}
+
+.langgraph-decision strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--navy);
+}
+
+.langgraph-decision p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.langgraph-decision ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.langgraph-next-step {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(19, 32, 51, 0.05);
+}
+
+.langgraph-next-step span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .langgraph-json {
   padding: 12px;
   border-radius: 14px;

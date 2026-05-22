@@ -3,6 +3,14 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 
 
+# schemas.py 阅读地图：
+# 1. ChatRequest / ChatResponse：客服窗口 /chat 的请求和响应。
+# 2. Login / User：登录、用户管理、RBAC 权限相关请求。
+# 3. Complaint / Order / Logistics：投诉、订单、物流接口请求。
+# 4. Knowledge / LangChain / LangGraph：知识库和 Agent 实验接口请求。
+
+
+# 1. 客服聊天接口：前端客服窗口会使用这些模型。
 class ChatRequest(BaseModel):
     user_id: str
     message: str
@@ -24,6 +32,7 @@ class ManualChatReplyRequest(BaseModel):
     message: str
 
 
+# 2. 登录和用户管理接口：认证、账号、角色、启用状态和重置密码。
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -48,6 +57,7 @@ class UserPasswordResetRequest(BaseModel):
     password: str
 
 
+# 3. 投诉、订单、物流接口：普通 REST API 的请求体。
 class ComplaintUpdateRequest(BaseModel):
     status: str = None
     priority: str = None
@@ -83,6 +93,7 @@ class LogisticsCreateRequest(BaseModel):
     status: str = "pending"
 
 
+# 4. 知识库和 Agent 实验接口：RAG、LangChain、LangGraph 使用。
 class KnowledgeArticleCreateRequest(BaseModel):
     title: str
     content: str

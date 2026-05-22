@@ -8,6 +8,14 @@ from app.services.llm_client import LLMClientError, call_llm
 from app.services.llm_reply import LLMReplyError, extract_reply_text
 
 
+# langchain_rag_agent.py 阅读地图：
+# 1. run_langchain_rag_agent(...) 是 LangChain RAG 实验入口。
+# 2. 先调用 search_knowledge 工具拿到知识库命中结果。
+# 3. build_langchain_input(...) 把知识库结果整理成 PromptTemplate 需要的变量。
+# 4. build_customer_reply(...) 优先调用 LLM，失败或未命中时用模板兜底。
+
+
+# 1. RAG Prompt：把用户问题、知识片段和来源组织成模型可读的提示词。
 LANGCHAIN_RAG_PROMPT = PromptTemplate.from_template(
     """
 你是电商客服知识库助手。
@@ -29,6 +37,7 @@ LANGCHAIN_RAG_PROMPT = PromptTemplate.from_template(
 )
 
 
+# 2. LangChain RAG 入口：检索知识 -> 构造 chain input -> 执行 chain -> 返回 trace。
 def run_langchain_rag_agent(question: str) -> Dict[str, Any]:
     knowledge_result = call_langchain_search_knowledge(question)
     chain_input = build_langchain_input(question, knowledge_result)
@@ -46,6 +55,7 @@ def run_langchain_rag_agent(question: str) -> Dict[str, Any]:
     }
 
 
+# 3. 输入整理：把知识库 matches/sources 转成 PromptTemplate 变量。
 def build_langchain_input(question: str, knowledge_result: Dict[str, Any]) -> Dict[str, Any]:
     matches = knowledge_result.get("matches", [])
     sources = knowledge_result.get("sources", [])
@@ -59,12 +69,14 @@ def build_langchain_input(question: str, knowledge_result: Dict[str, Any]) -> Di
     }
 
 
+# 4. Chain 编排：PromptTemplate 生成 prompt_text，再交给 build_customer_reply。
 def build_langchain_rag_chain():
     return RunnablePassthrough.assign(
         prompt_text=LANGCHAIN_RAG_PROMPT | RunnableLambda(prompt_value_to_text)
     ) | RunnableLambda(build_customer_reply)
 
 
+# 5. 回复生成：优先 LLM，失败或未命中时模板兜底。
 def build_customer_reply(chain_input: Dict[str, Any]) -> Dict[str, Any]:
     found = chain_input.get("found", False)
     sources = chain_input.get("sources", [])
@@ -101,6 +113,7 @@ def build_customer_reply(chain_input: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# 6. 辅助函数：构造 LLM messages、模板回复、知识文本和 prompt 字符串。
 def build_langchain_llm_messages(prompt_text: str) -> List[Dict[str, str]]:
     return [
         {

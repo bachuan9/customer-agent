@@ -7,6 +7,14 @@ from pydantic import BaseModel
 load_dotenv()
 
 
+# config.py 阅读地图：
+# 1. load_dotenv() 读取本地 .env。
+# 2. read_bool_env(...) 把字符串环境变量转成布尔值。
+# 3. Settings 集中保存项目名、LLM、DeepSeek、Embedding 等配置。
+# 4. 其他模块统一 import settings，避免到处直接读 os.getenv。
+
+
+# 1. 布尔环境变量读取：把 true/false、1/0 这类字符串转成 Python bool。
 def read_bool_env(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -14,6 +22,7 @@ def read_bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# 2. 项目配置对象：后端启动后全局复用这份 settings。
 class Settings(BaseModel):
     app_name: str = os.getenv("APP_NAME", "Ecom Service Agent")
     app_env: str = os.getenv("APP_ENV", "dev")

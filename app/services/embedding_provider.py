@@ -6,13 +6,22 @@ from typing import List, Optional
 from app.core.config import settings
 
 
+# embedding_provider.py 阅读地图：
+# 1. normalize_embedding_text(...) 先把文本做简单标准化。
+# 2. LocalEmbeddingProvider 是教学版本地 embedding，不依赖外部模型。
+# 3. serialize/parse 负责把向量存进 SQLite 或从 SQLite 读回来。
+# 4. cosine_similarity(...) 用来比较 query 和知识 chunk 的向量相似度。
+
+
 LOCAL_EMBEDDING_DIMENSIONS = 64
 
 
+# 1. 文本标准化：减少大小写和空格对本地向量的影响。
 def normalize_embedding_text(text: str) -> str:
     return text.lower().replace(" ", "")
 
 
+# 2. 本地教学版 embedding：把字符哈希到固定维度向量里。
 class LocalEmbeddingProvider:
     name = "local_hash"
 
@@ -36,6 +45,7 @@ class LocalEmbeddingProvider:
         return [round(value / length, 6) for value in vector]
 
 
+# 3. provider 获取和向量序列化：给 RAG 索引和检索使用。
 def get_embedding_provider(provider_name: Optional[str] = None) -> LocalEmbeddingProvider:
     selected_provider = (provider_name or settings.embedding_provider).strip().lower()
     if selected_provider != LocalEmbeddingProvider.name:
@@ -63,6 +73,7 @@ def parse_embedding(value: Optional[str]) -> List[float]:
     return [float(item) for item in parsed if isinstance(item, (int, float))]
 
 
+# 4. 相似度计算：比较两个 embedding 向量是否接近。
 def cosine_similarity(left: List[float], right: List[float]) -> float:
     if not left or not right or len(left) != len(right):
         return 0.0

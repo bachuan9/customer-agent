@@ -94,6 +94,7 @@ def test_run_langgraph_agent_routes_high_risk_to_confirmation(monkeypatch):
         "check_pending_confirmation",
         "select_tool",
         "call_tool",
+        "summarize_decision",
         "assess_risk",
         "confirm_complaint",
     ]
@@ -103,6 +104,8 @@ def test_run_langgraph_agent_routes_high_risk_to_confirmation(monkeypatch):
     assert result["trace"]["requires_confirmation"] is True
     assert result["trace"]["confirmation_action"] == "create_complaint"
     assert result["trace"]["pending_saved"] is True
+    assert result["decision_summary"]["selected_tool"] == "search_knowledge"
+    assert "知识库" in result["decision_summary"]["why_this_tool"]
     assert result["tool_result"]["found"] is True
     assert "确认创建投诉" in result["reply"]
 
@@ -132,6 +135,7 @@ def test_run_langgraph_agent_uses_order_tool_when_order_no_exists(monkeypatch):
         "check_pending_confirmation",
         "select_tool",
         "call_tool",
+        "summarize_decision",
         "assess_risk",
         "confirm_complaint",
     ]
@@ -139,6 +143,8 @@ def test_run_langgraph_agent_uses_order_tool_when_order_no_exists(monkeypatch):
     assert result["trace"]["tool_arguments"]["order_no"] == "A101"
     assert result["trace"]["suggest_complaint"] is True
     assert result["trace"]["risk_level"] == "high"
+    assert result["decision_summary"]["selected_tool"] == "handle_order_issue"
+    assert "订单编号" in result["decision_summary"]["why_this_tool"]
     assert result["tool_result"]["order_no"] == "A101"
     assert "已查询到订单 A101" in result["reply"]
 
@@ -152,6 +158,7 @@ def test_run_langgraph_agent_uses_logistics_tool_when_tracking_no_exists(monkeyp
         "check_pending_confirmation",
         "select_tool",
         "call_tool",
+        "summarize_decision",
         "assess_risk",
         "confirm_complaint",
     ]
@@ -159,6 +166,8 @@ def test_run_langgraph_agent_uses_logistics_tool_when_tracking_no_exists(monkeyp
     assert result["trace"]["tool_arguments"]["tracking_no"] == "L101"
     assert result["trace"]["suggest_complaint"] is True
     assert result["trace"]["risk_level"] == "high"
+    assert result["decision_summary"]["selected_tool"] == "handle_logistics_issue"
+    assert "物流编号" in result["decision_summary"]["why_this_tool"]
     assert result["tool_result"]["tracking_no"] == "L101"
     assert "已查询到物流单 L101" in result["reply"]
 
@@ -181,9 +190,16 @@ def test_run_langgraph_agent_ends_after_normal_risk_policy_question(monkeypatch)
 
     result = run_langgraph_agent("退货后多久退款", user_id="pytest-langgraph-normal")
 
-    assert result["trace"]["nodes"] == ["check_pending_confirmation", "select_tool", "call_tool", "assess_risk"]
+    assert result["trace"]["nodes"] == [
+        "check_pending_confirmation",
+        "select_tool",
+        "call_tool",
+        "summarize_decision",
+        "assess_risk",
+    ]
     assert result["trace"]["tool_selected"] == "search_knowledge"
     assert result["trace"]["risk_level"] == "normal"
+    assert result["decision_summary"]["selected_tool"] == "search_knowledge"
     assert "requires_confirmation" not in result["trace"]
 
 
@@ -226,9 +242,11 @@ def test_langgraph_agent_endpoint_returns_trace(monkeypatch):
         "check_pending_confirmation",
         "select_tool",
         "call_tool",
+        "summarize_decision",
         "assess_risk",
         "confirm_complaint",
     ]
     assert data["trace"]["tool_selected"] == "search_knowledge"
     assert data["trace"]["requires_confirmation"] is True
+    assert data["decision_summary"]["selected_tool"] == "search_knowledge"
     assert data["tool_result"]["found"] is True

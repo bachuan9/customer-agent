@@ -134,7 +134,7 @@ from app.services.embedding_provider import (
 )
 
 
-# 1. 查询工具：只读取数据库，不修改数据。
+# 1. 基础查询工具：只读取数据库，不修改数据。
 def query_order(order_no: str) -> Dict[str, Any]:
     status = get_order_status(order_no)
     if status is None:
@@ -166,122 +166,7 @@ def query_logistics_by_order(order_no: str) -> Dict[str, Any]:
     }
 
 
-def should_suggest_logistics_complaint(query: str) -> bool:
-    return any(keyword in query for keyword in LOGISTICS_ISSUE_SUGGESTION_KEYWORDS)
-
-
-def should_suggest_order_complaint(query: str) -> bool:
-    return any(keyword in query for keyword in ORDER_ISSUE_SUGGESTION_KEYWORDS)
-
-
-def build_order_issue_suggestion(
-    order_result: Dict[str, Any],
-    logistics_result: Dict[str, Any],
-    knowledge_result: Dict[str, Any],
-    suggest_complaint: bool,
-) -> str:
-    if not order_result.get("found"):
-        return "建议先请用户核对订单号；确认订单号无误后，再人工核实订单是否存在或是否属于其他渠道订单。"
-
-    if logistics_result.get("found"):
-        if logistics_result.get("status") == "delivered":
-            return "建议告知用户订单已有物流记录且显示已送达；如果用户仍反馈未收到，可继续核实签收信息、收货地址和物流签收证明。"
-        return "建议告知用户订单已有物流记录，并结合物流状态安抚用户；如物流长时间未更新，可联系仓库或承运商核实。"
-
-    if suggest_complaint:
-        return "建议先安抚用户，并核实订单是否已生成物流单；如果确认超过承诺时效仍未发货，可引导用户确认创建投诉并升级处理。"
-
-    if knowledge_result.get("found"):
-        return "建议参考命中的平台政策回复用户，并结合订单状态继续核实是否存在预售、定制、大促或仓库延迟。"
-
-    return "建议先人工核实订单和仓库状态；当前知识库没有命中可靠政策，避免直接承诺处理结果。"
-
-
-def build_logistics_issue_suggestion(
-    logistics_result: Dict[str, Any],
-    knowledge_result: Dict[str, Any],
-    suggest_complaint: bool,
-) -> str:
-    if not logistics_result.get("found"):
-        return "建议先请用户核对物流单号；如果单号无误，再联系仓库或承运商确认是否已生成有效物流轨迹。"
-
-    if logistics_result.get("status") == "delivered":
-        return "建议告知用户物流显示已送达；如果用户反馈未收到，应优先核实签收人、签收地址和物流签收证明。"
-
-    if suggest_complaint:
-        return "建议先安抚用户，并联系仓库或承运商核实物流长时间未更新原因；如果确认超时，可引导用户确认创建投诉并升级处理。"
-
-    if knowledge_result.get("found"):
-        return "建议参考命中的物流政策回复用户，并结合当前物流状态判断是否需要继续跟进。"
-
-    return "建议先人工核实物流轨迹和承运商状态；当前知识库没有命中可靠政策，避免直接承诺赔付或时效。"
-
-
-def handle_order_issue(order_no: str, query: str) -> Dict[str, Any]:
-    order_result = query_order(order_no)
-    logistics_result = query_logistics_by_order(order_no)
-    knowledge_result = search_knowledge(query)
-    suggest_complaint = should_suggest_order_complaint(query)
-    agent_suggestion = build_order_issue_suggestion(
-        order_result,
-        logistics_result,
-        knowledge_result,
-        suggest_complaint,
-    )
-
-    return {
-        "found": order_result.get("found", False),
-        "order_no": order_no,
-        "order_status": order_result.get("status"),
-        "order_result": order_result,
-        "logistics_result": logistics_result,
-        "tracking_no": logistics_result.get("tracking_no"),
-        "logistics_status": logistics_result.get("status"),
-        "knowledge_result": knowledge_result,
-        "knowledge_found": knowledge_result.get("found", False),
-        "knowledge_sources": knowledge_result.get("sources", []),
-        "suggest_complaint": suggest_complaint,
-        "agent_suggestion": agent_suggestion,
-        "steps": [
-            "调用工具：query_order",
-            "调用工具：query_logistics_by_order",
-            "调用工具：search_knowledge",
-            "生成客服处理建议",
-            "判断是否需要建议创建投诉",
-        ],
-    }
-
-
-def handle_logistics_issue(tracking_no: str, query: str) -> Dict[str, Any]:
-    logistics_result = query_logistics(tracking_no)
-    knowledge_result = search_knowledge(query)
-    suggest_complaint = should_suggest_logistics_complaint(query)
-    agent_suggestion = build_logistics_issue_suggestion(
-        logistics_result,
-        knowledge_result,
-        suggest_complaint,
-    )
-
-    return {
-        "found": logistics_result.get("found", False),
-        "tracking_no": tracking_no,
-        "order_no": logistics_result.get("order_no"),
-        "logistics_status": logistics_result.get("status"),
-        "logistics_result": logistics_result,
-        "knowledge_result": knowledge_result,
-        "knowledge_found": knowledge_result.get("found", False),
-        "knowledge_sources": knowledge_result.get("sources", []),
-        "suggest_complaint": suggest_complaint,
-        "agent_suggestion": agent_suggestion,
-        "steps": [
-            "调用工具：query_logistics",
-            "调用工具：search_knowledge",
-            "生成客服处理建议",
-            "判断是否需要建议创建投诉",
-        ],
-    }
-
-
+# 2. RAG 知识库工具：加载知识、切片、建索引、检索和评测。
 def get_knowledge_dir_path() -> str:
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     return os.path.join(base_dir, "docs", "knowledge")
@@ -522,7 +407,124 @@ def run_rag_evaluation() -> Dict[str, Any]:
     }
 
 
-# 2. 投诉工具：创建、筛选、更新投诉工单。
+# 3. 组合业务工具：把基础查询 + RAG 检索 + 客服建议合成一个业务处理结果。
+def should_suggest_logistics_complaint(query: str) -> bool:
+    return any(keyword in query for keyword in LOGISTICS_ISSUE_SUGGESTION_KEYWORDS)
+
+
+def should_suggest_order_complaint(query: str) -> bool:
+    return any(keyword in query for keyword in ORDER_ISSUE_SUGGESTION_KEYWORDS)
+
+
+def build_order_issue_suggestion(
+    order_result: Dict[str, Any],
+    logistics_result: Dict[str, Any],
+    knowledge_result: Dict[str, Any],
+    suggest_complaint: bool,
+) -> str:
+    if not order_result.get("found"):
+        return "建议先请用户核对订单号；确认订单号无误后，再人工核实订单是否存在或是否属于其他渠道订单。"
+
+    if logistics_result.get("found"):
+        if logistics_result.get("status") == "delivered":
+            return "建议告知用户订单已有物流记录且显示已送达；如果用户仍反馈未收到，可继续核实签收信息、收货地址和物流签收证明。"
+        return "建议告知用户订单已有物流记录，并结合物流状态安抚用户；如物流长时间未更新，可联系仓库或承运商核实。"
+
+    if suggest_complaint:
+        return "建议先安抚用户，并核实订单是否已生成物流单；如果确认超过承诺时效仍未发货，可引导用户确认创建投诉并升级处理。"
+
+    if knowledge_result.get("found"):
+        return "建议参考命中的平台政策回复用户，并结合订单状态继续核实是否存在预售、定制、大促或仓库延迟。"
+
+    return "建议先人工核实订单和仓库状态；当前知识库没有命中可靠政策，避免直接承诺处理结果。"
+
+
+def build_logistics_issue_suggestion(
+    logistics_result: Dict[str, Any],
+    knowledge_result: Dict[str, Any],
+    suggest_complaint: bool,
+) -> str:
+    if not logistics_result.get("found"):
+        return "建议先请用户核对物流单号；如果单号无误，再联系仓库或承运商确认是否已生成有效物流轨迹。"
+
+    if logistics_result.get("status") == "delivered":
+        return "建议告知用户物流显示已送达；如果用户反馈未收到，应优先核实签收人、签收地址和物流签收证明。"
+
+    if suggest_complaint:
+        return "建议先安抚用户，并联系仓库或承运商核实物流长时间未更新原因；如果确认超时，可引导用户确认创建投诉并升级处理。"
+
+    if knowledge_result.get("found"):
+        return "建议参考命中的物流政策回复用户，并结合当前物流状态判断是否需要继续跟进。"
+
+    return "建议先人工核实物流轨迹和承运商状态；当前知识库没有命中可靠政策，避免直接承诺赔付或时效。"
+
+
+def handle_order_issue(order_no: str, query: str) -> Dict[str, Any]:
+    order_result = query_order(order_no)
+    logistics_result = query_logistics_by_order(order_no)
+    knowledge_result = search_knowledge(query)
+    suggest_complaint = should_suggest_order_complaint(query)
+    agent_suggestion = build_order_issue_suggestion(
+        order_result,
+        logistics_result,
+        knowledge_result,
+        suggest_complaint,
+    )
+
+    return {
+        "found": order_result.get("found", False),
+        "order_no": order_no,
+        "order_status": order_result.get("status"),
+        "order_result": order_result,
+        "logistics_result": logistics_result,
+        "tracking_no": logistics_result.get("tracking_no"),
+        "logistics_status": logistics_result.get("status"),
+        "knowledge_result": knowledge_result,
+        "knowledge_found": knowledge_result.get("found", False),
+        "knowledge_sources": knowledge_result.get("sources", []),
+        "suggest_complaint": suggest_complaint,
+        "agent_suggestion": agent_suggestion,
+        "steps": [
+            "调用工具：query_order",
+            "调用工具：query_logistics_by_order",
+            "调用工具：search_knowledge",
+            "生成客服处理建议",
+            "判断是否需要建议创建投诉",
+        ],
+    }
+
+
+def handle_logistics_issue(tracking_no: str, query: str) -> Dict[str, Any]:
+    logistics_result = query_logistics(tracking_no)
+    knowledge_result = search_knowledge(query)
+    suggest_complaint = should_suggest_logistics_complaint(query)
+    agent_suggestion = build_logistics_issue_suggestion(
+        logistics_result,
+        knowledge_result,
+        suggest_complaint,
+    )
+
+    return {
+        "found": logistics_result.get("found", False),
+        "tracking_no": tracking_no,
+        "order_no": logistics_result.get("order_no"),
+        "logistics_status": logistics_result.get("status"),
+        "logistics_result": logistics_result,
+        "knowledge_result": knowledge_result,
+        "knowledge_found": knowledge_result.get("found", False),
+        "knowledge_sources": knowledge_result.get("sources", []),
+        "suggest_complaint": suggest_complaint,
+        "agent_suggestion": agent_suggestion,
+        "steps": [
+            "调用工具：query_logistics",
+            "调用工具：search_knowledge",
+            "生成客服处理建议",
+            "判断是否需要建议创建投诉",
+        ],
+    }
+
+
+# 4. 投诉工具：创建、筛选、更新投诉工单。
 def create_complaint(
     user_id: str,
     content: str,
@@ -559,7 +561,7 @@ def get_complaint_detail(complaint_id: str) -> Optional[Dict[str, Any]]:
     return {"complaint": complaint, "notes": notes}
 
 
-# 3. 订单工具：创建订单、校验状态、更新订单。
+# 5. 订单工具：创建订单、校验状态、更新订单。
 def create_order(order_no: str, user_id: str, status: str = "pending") -> Dict[str, str]:
     return db_insert_order(order_no, user_id, status)
 
@@ -574,7 +576,7 @@ def update_order(order_no: str, status: str) -> Dict[str, Any]:
     return {"updated": True, "order": get_order_by_no(order_no), "error": None}
 
 
-# 4. 物流工具：创建物流、校验状态、更新物流。
+# 6. 物流工具：创建物流、校验状态、更新物流。
 def create_logistics(tracking_no: str, order_no: str, status: str = "pending") -> Dict[str, str]:
     db_insert_logistics(tracking_no, order_no, status)
     return {"tracking_no": tracking_no, "order_no": order_no, "status": status}
@@ -590,7 +592,7 @@ def update_logistics(tracking_no: str, status: str) -> Dict[str, Any]:
     return {"updated": True, "logistics": get_logistics_by_tracking_no(tracking_no), "error": None}
 
 
-# 5. 投诉更新工具：包装 db.py 的 update_complaint()。
+# 7. 投诉更新工具：包装 db.py 的 update_complaint()。
 def update_complaint(
     complaint_id: str,
     *,
@@ -603,7 +605,7 @@ def update_complaint(
     return db_update_complaint(complaint_id, status=status, handler=handler, priority=priority)
 
 
-# 6. 投诉备注工具：添加、查询、修改、删除备注。
+# 8. 投诉备注工具：添加、查询、修改、删除备注。
 def add_complaint_note(
     complaint_id: str,
     content: str,

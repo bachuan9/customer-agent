@@ -121,18 +121,9 @@ LangGraph 实验区用于演示更清晰的 Agent 状态机流程：
 
 ## 快速开始
 
-创建并激活 Python 3.11 虚拟环境：
+### 方式一：Docker 启动（推荐）
 
-```powershell
-py -3.11 -m venv .venv311
-.\.venv311\Scripts\Activate.ps1
-```
-
-安装依赖：
-
-```powershell
-.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
-```
+如果你只是想运行项目、测试网页和接口，推荐使用 Docker。它会固定 Python 版本、依赖和启动命令，避免本机环境差异。
 
 复制配置文件：
 
@@ -140,10 +131,22 @@ py -3.11 -m venv .venv311
 Copy-Item .env.example .env
 ```
 
-启动后端：
+启动或重新构建后启动：
 
 ```powershell
-.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
+docker compose up --build -d
+```
+
+查看服务是否正常：
+
+```powershell
+docker ps
+```
+
+如果你修改了后端或前端代码，需要重新执行：
+
+```powershell
+docker compose up --build -d
 ```
 
 访问地址：
@@ -158,6 +161,35 @@ Copy-Item .env.example .env
 
 ```json
 {"status":"ok"}
+```
+
+停止 Docker 服务：
+
+```powershell
+docker compose down
+```
+
+### 方式二：本地开发启动
+
+如果你要边改代码边调试，可以用本地 Python 启动。注意：如果 Docker 已经占用 `8001`，需要先执行 `docker compose down`，否则端口会冲突。
+
+创建并激活 Python 3.11 虚拟环境：
+
+```powershell
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\Activate.ps1
+```
+
+安装依赖：
+
+```powershell
+.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+本地启动后端：
+
+```powershell
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir . --port 8001
 ```
 
 ## 默认账号
@@ -198,6 +230,14 @@ DEEPSEEK_API_KEY=你的真实key
 .\.venv311\Scripts\python.exe -m pytest -q
 ```
 
+如果本机启用了真实 LLM，完整测试可能因为网络请求或模型超时变慢。可以先跑主线核心测试，确认项目主链路正常：
+
+```powershell
+.\.venv311\Scripts\python.exe -m pytest tests\test_db_layer.py tests\test_api_routes.py tests\test_agent_core.py tests\test_langgraph_agent.py -q
+.\.venv311\Scripts\python.exe -m pytest tests\test_langchain_agent.py tests\test_langchain_rag_agent.py tests\test_langchain_retriever.py tests\test_langchain_tools.py tests\test_knowledge_rag.py -q
+.\.venv311\Scripts\python.exe -m pytest tests\test_agent_evaluation.py -q
+```
+
 检查前端 JavaScript 语法：
 
 ```powershell
@@ -207,15 +247,15 @@ node --check web\app.js
 检查 Python 文件能否编译：
 
 ```powershell
-.\.venv311\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app scripts
 ```
 
 当前完整检查应看到：
 
 ```text
-pytest: 111 passed
+pytest: 147 passed
 node --check web/app.js: passed
-python -m compileall app: passed
+python -m compileall app scripts: passed
 ```
 
 ## 手动测试建议
@@ -271,7 +311,7 @@ practice/
 git status --short
 .\.venv311\Scripts\python.exe -m pytest -q
 node --check web\app.js
-.\.venv311\Scripts\python.exe -m compileall app
+.\.venv311\Scripts\python.exe -m compileall app scripts
 ```
 
 更多启动、测试和排错步骤见 [运行与测试手册](docs/运行与测试手册.md) 和 [开发手册](docs/development-guide.md)。

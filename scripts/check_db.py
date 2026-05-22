@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 """
 检查 SQLite 数据库内容（无外部依赖）
+
+阅读顺序：
+1. 定位数据库文件
+2. 检查数据库文件是否存在
+3. 连接 SQLite
+4. 查看有哪些表
+5. 查看投诉表和会话表的最新数据
+6. 额外验证订单/物流数据层函数
 """
 import sqlite3
 import os
@@ -11,7 +19,8 @@ print("=" * 70)
 print("SQLite 数据库检查")
 print("=" * 70)
 
-# 检查文件是否存在
+# 第一步：检查数据库文件是否存在。
+# 如果这个文件都不存在，说明后端可能还没启动过，或者数据库路径不对。
 if not os.path.exists(db_path):
     print(f"\n✗ 数据库文件不存在: {db_path}")
     print("请确认后端已启动")
@@ -20,7 +29,7 @@ if not os.path.exists(db_path):
 print(f"\n✓ 数据库文件存在: {db_path}")
 print(f"  大小: {os.path.getsize(db_path)} 字节")
 
-# 连接数据库
+# 第二步：连接数据库并读取表结构、投诉数据、会话数据。
 try:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -73,6 +82,7 @@ except Exception as e:
     traceback.print_exc()
     exit(1)
 
+# 第三步：直接调用 db.py 里的订单/物流函数，验证数据层函数是否可用。
 from app.storage.db import (
     insert_order,
     get_order_status,
