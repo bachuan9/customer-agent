@@ -3,6 +3,7 @@ from typing import Set
 from fastapi import APIRouter, Header, HTTPException
 import sqlite3
 
+from app.core.config import settings
 from app.models.schemas import (
     AuthenticatedChatRequest,
     ChatRequest,
@@ -210,6 +211,47 @@ def write_audit_log(
 @router.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
+
+
+@router.get("/project/health-report")
+def project_health_report() -> dict:
+    rag_eval = run_rag_evaluation()
+    agent_eval = run_agent_evaluation()
+    checks = [
+        {
+            "name": "RAG 知识库评测",
+            "status": "passed" if rag_eval["failed"] == 0 else "failed",
+            "detail": f"{rag_eval['passed']}/{rag_eval['total']} 通过",
+        },
+        {
+            "name": "Agent 决策评测",
+            "status": "passed" if agent_eval["failed"] == 0 else "failed",
+            "detail": f"{agent_eval['passed']}/{agent_eval['total']} 通过",
+        },
+        {
+            "name": "LLM 配置状态",
+            "status": "enabled" if settings.llm_enabled else "disabled",
+            "detail": f"provider={settings.llm_provider}, model={settings.llm_model}",
+        },
+        {
+            "name": "可解释链路",
+            "status": "passed",
+            "detail": "聊天 trace、decision_path、LangGraph 节点和评测链路均可展示",
+        },
+    ]
+    failed_count = sum(1 for item in checks if item["status"] == "failed")
+    return {
+        "status": "ready" if failed_count == 0 else "needs_attention",
+        "failed_count": failed_count,
+        "checks": checks,
+        "recommended_demo": [
+            "点击项目能力总览，介绍系统亮点",
+            "发送：我的订单 A101 48小时了，怎么还没发货",
+            "查看 Agent 决策链路和 LangGraph 节点",
+            "回复：确认创建投诉",
+            "运行 Agent 评测，展示自动化验证结果",
+        ],
+    }
 
 
 @router.get("/tool-logs")

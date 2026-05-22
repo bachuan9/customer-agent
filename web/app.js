@@ -30,6 +30,7 @@ const toolLogsBtn = document.getElementById("toolLogsBtn");
 const usersBtn = document.getElementById("usersBtn");
 const auditLogsBtn = document.getElementById("auditLogsBtn");
 const capabilitiesBtn = document.getElementById("capabilitiesBtn");
+const healthReportBtn = document.getElementById("healthReportBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statsTotal = document.getElementById("statsTotal");
 const statsPending = document.getElementById("statsPending");
@@ -351,6 +352,57 @@ async function showCapabilitiesOverview() {
     loadingBubble.classList.remove("typing");
   } catch (err) {
     setBubbleText(loadingBubble, "项目能力总览加载失败，请确认后端服务正在运行。");
+    loadingBubble.classList.remove("typing");
+  }
+}
+
+function renderProjectHealthReport(data) {
+  const statusText = data.status === "ready" ? "演示就绪" : "需要关注";
+  const checkItems = (data.checks || [])
+    .map(
+      (item) => `
+        <li class="health-check health-${escapeHtml(item.status || "unknown")}">
+          <span>${escapeHtml(item.status || "unknown")}</span>
+          <div>
+            <strong>${escapeHtml(item.name || "未命名检查")}</strong>
+            <p>${escapeHtml(item.detail || "暂无详情")}</p>
+          </div>
+        </li>
+      `
+    )
+    .join("");
+  const demoSteps = (data.recommended_demo || [])
+    .map((item, index) => `<li><span>${index + 1}</span>${escapeHtml(item)}</li>`)
+    .join("");
+
+  return `
+    <div class="project-health-report">
+      <div class="health-report-header">
+        <span>Project Check</span>
+        <h3>${statusText}</h3>
+        <p>失败项：${Number(data.failed_count || 0)}。这份报告用于演示前快速确认核心 Agent 链路。</p>
+      </div>
+      <ul class="health-check-list">${checkItems}</ul>
+      <div class="health-demo-steps">
+        <strong>推荐演示顺序</strong>
+        <ol>${demoSteps}</ol>
+      </div>
+    </div>
+  `;
+}
+
+async function showProjectHealthReport() {
+  const loadingBubble = appendBubble("agent", "正在运行项目自检...", { typing: true });
+  try {
+    const res = await fetch(`${API_BASE}/project/health-report`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    setBubbleHtml(loadingBubble, renderProjectHealthReport(data));
+    loadingBubble.classList.remove("typing");
+  } catch (err) {
+    setBubbleText(loadingBubble, "项目自检失败，请确认后端服务正在运行。");
     loadingBubble.classList.remove("typing");
   }
 }
@@ -2405,6 +2457,7 @@ auditLogsBtn.addEventListener("click", async () => {
 });
 
 capabilitiesBtn.addEventListener("click", showCapabilitiesOverview);
+healthReportBtn.addEventListener("click", showProjectHealthReport);
 
 knowledgeBtn.addEventListener("click", async () => {
   await loadKnowledgeArticles(true);

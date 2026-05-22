@@ -34,6 +34,20 @@ def test_project_capabilities_endpoint_returns_demo_overview():
     assert any("A101" in item for item in body["demo_questions"])
 
 
+def test_project_health_report_endpoint_returns_core_checks():
+    response = client.get("/project/health-report")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    check_names = {item["name"] for item in body["checks"]}
+    assert "RAG 知识库评测" in check_names
+    assert "Agent 决策评测" in check_names
+    assert "LLM 配置状态" in check_names
+    assert "可解释链路" in check_names
+    assert body["recommended_demo"]
+
+
 def test_chat_endpoint_uses_rule_agent_when_llm_disabled():
     original_llm_enabled = settings.llm_enabled
     settings.llm_enabled = False

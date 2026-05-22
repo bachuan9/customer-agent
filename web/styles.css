@@ -1142,6 +1142,135 @@ button:disabled {
   font-weight: 800;
 }
 
+.project-health-report {
+  display: grid;
+  gap: 14px;
+  white-space: normal;
+}
+
+.health-report-header {
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(25, 164, 106, 0.14), rgba(243, 165, 27, 0.12));
+  border: 1px solid rgba(25, 164, 106, 0.22);
+}
+
+.health-report-header span {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.health-report-header h3 {
+  margin: 6px 0;
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.health-report-header p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.health-check-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.health-check {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 32, 51, 0.1);
+  background: #fff;
+}
+
+.health-check > span {
+  align-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(19, 32, 51, 0.08);
+  color: var(--muted);
+}
+
+.health-check strong {
+  color: var(--navy);
+}
+
+.health-check p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.health-passed > span,
+.health-enabled > span {
+  background: rgba(25, 164, 106, 0.14);
+  color: #08784b;
+}
+
+.health-disabled > span {
+  background: rgba(243, 165, 27, 0.16);
+  color: var(--accent-ink);
+}
+
+.health-failed > span {
+  background: rgba(180, 35, 24, 0.12);
+  color: var(--danger);
+}
+
+.health-demo-steps {
+  padding: 12px;
+  border-radius: 14px;
+  background: #f7f9fc;
+  border: 1px dashed rgba(19, 32, 51, 0.16);
+}
+
+.health-demo-steps strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.health-demo-steps ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.health-demo-steps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--muted);
+}
+
+.health-demo-steps li span {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .manual-reply-form {
   margin-top: 14px;
   padding: 14px;
