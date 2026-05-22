@@ -1021,11 +1021,14 @@ function renderAgentEvaluationResult(result) {
               <span>${item.passed ? "通过" : "失败"}</span>
               <span>预期意图：${escapeHtml(item.expected_intent || "无")}</span>
               <span>实际意图：${escapeHtml(item.actual_intent || "无")}</span>
+              <span>执行模式：${escapeHtml(item.execution_mode || "无")}</span>
               <span>回复来源：${escapeHtml(item.reply_source || "无")}</span>
+              <span>LangGraph工具：${escapeHtml(item.langgraph_tool || "无")}</span>
               <span>RAG命中：${item.rag_found ? "是" : "否"}</span>
             </div>
             <strong>${escapeHtml(item.name)}</strong>
             <p>输入：${escapeHtml((item.messages || []).join(" -> "))}</p>
+            <p>LangGraph节点：${escapeHtml((item.langgraph_nodes || []).join(" -> ") || "无")}</p>
             <p>RAG来源：${escapeHtml((item.rag_sources || []).join(", ") || "无")}</p>
             <p>失败原因：${escapeHtml((item.failures || []).join("；") || "无")}</p>
             <pre>${escapeHtml(item.reply || "")}</pre>
